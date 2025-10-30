@@ -3,3 +3,7 @@ CHECKLIST_BAO_CAO.md
 COMPLETION_REPORT.md
 HUONG_DAN.md
 PROJECT_SUMMARY.md
+utils/__pycache__/
+algorithms/swarm/__pycache__/
+algorithms/traditional/__pycache__/
+problems/__pycache__/
