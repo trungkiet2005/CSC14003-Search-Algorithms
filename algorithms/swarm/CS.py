@@ -4,6 +4,7 @@ Reference: Yang, X. S., & Deb, S. (2009). Cuckoo search via Lévy flights.
 """
 
 import numpy as np
+import math
 
 
 def run_cs(objective_func, dim, bounds, n_nests=25, max_iter=100,
@@ -116,8 +117,8 @@ def levy_flight(dim, beta=1.5):
         numpy array: Lévy flight step
     """
     # Mantegna's method
-    sigma_u = (np.math.gamma(1 + beta) * np.sin(np.pi * beta / 2) /
-               (np.math.gamma((1 + beta) / 2) * beta * 2 ** ((beta - 1) / 2))) ** (1 / beta)
+    sigma_u = (math.gamma(1 + beta) * np.sin(np.pi * beta / 2) /
+               (math.gamma((1 + beta) / 2) * beta * 2 ** ((beta - 1) / 2))) ** (1 / beta)
     
     u = np.random.normal(0, sigma_u, dim)
     v = np.random.normal(0, 1, dim)
