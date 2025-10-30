@@ -260,9 +260,10 @@ Project đo lường các metrics sau:
 
 ## 👥 Nhóm thực hiện
 
-- **Sinh viên 1**: [MSSV] - [Họ tên]
-- **Sinh viên 2**: [MSSV] - [Họ tên]
-- **Sinh viên 3**: [MSSV] - [Họ tên]
+- **Sinh viên 1**: [23122014] - [Hoàng Minh Trung]
+- **Sinh viên 2**: [23122015] - [Nguyễn Gia Bảo]
+- **Sinh viên 3**: [23122021] - [Bùi Duy Bảo]
+- **Sinh viên 3**: [23122039] - [Huỳnh Trung Kiệt]
 
 **Repository**: https://github.com/trungkiet2005/CSC14003-Search-Algorithms
 
