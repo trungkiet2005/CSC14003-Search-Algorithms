@@ -19,31 +19,32 @@ def timeit(func, *args, repeat=1, **kwargs):
     return result, total / repeat
 
 
-def run_multiple_times(algorithm_func, n_runs=10, **kwargs):
+def run_multiple_times(algorithm_func, n_runs=10, seed=None, minimize=True, **kwargs):
     """Run an algorithm multiple times and collect statistics.
     
     Args:
         algorithm_func: function to run
         n_runs: number of independent runs
+        seed: base random seed for reproducibility
+        minimize: True for minimization, False for maximization
         **kwargs: arguments to pass to algorithm_func
     
     Returns:
-        dict with statistics:
-            - 'results': list of all results
-            - 'best_fitness': best fitness across all runs
-            - 'worst_fitness': worst fitness
-            - 'mean_fitness': mean fitness
-            - 'std_fitness': standard deviation
-            - 'mean_time': mean execution time
-            - 'total_time': total execution time
+        dict with statistics
     """
     results = []
     times = []
     best_fitnesses = []
     
+    # Create a random number generator for seeds
+    seed_rng = np.random.default_rng(seed)
+    
     for run in range(n_runs):
+        # Generate a new seed for each run to ensure variability
+        run_seed = seed_rng.integers(low=0, high=2**32 - 1)
+        
         t0 = time.time()
-        result = algorithm_func(**kwargs)
+        result = algorithm_func(seed=run_seed, **kwargs)
         t1 = time.time()
         
         results.append(result)
@@ -54,8 +55,8 @@ def run_multiple_times(algorithm_func, n_runs=10, **kwargs):
     
     return {
         'results': results,
-        'best_fitness': np.min(best_fitnesses),
-        'worst_fitness': np.max(best_fitnesses),
+        'best_fitness': np.min(best_fitnesses) if minimize else np.max(best_fitnesses),
+        'worst_fitness': np.max(best_fitnesses) if minimize else np.min(best_fitnesses),
         'mean_fitness': np.mean(best_fitnesses),
         'std_fitness': np.std(best_fitnesses),
         'median_fitness': np.median(best_fitnesses),
@@ -74,12 +75,16 @@ def compare_algorithms(algorithms_dict, problem_func, n_runs=10, **problem_kwarg
         algorithms_dict: dict of {name: (func, kwargs)} for each algorithm
         problem_func: objective function
         n_runs: number of runs per algorithm
-        **problem_kwargs: additional arguments (dim, bounds, etc.)
+        **problem_kwargs: additional arguments (dim, bounds, seed, etc.)
     
     Returns:
         dict with comparison results for each algorithm
     """
     comparison = {}
+    
+    # Extract seed and minimize, as they are not for the algorithm functions
+    seed = problem_kwargs.pop('seed', None)
+    minimize = problem_kwargs.pop('minimize', True)
     
     for name, (algo_func, algo_kwargs) in algorithms_dict.items():
         print(f"Running {name}...")
@@ -88,7 +93,7 @@ def compare_algorithms(algorithms_dict, problem_func, n_runs=10, **problem_kwarg
         run_kwargs = {**problem_kwargs, **algo_kwargs}
         run_kwargs['objective_func'] = problem_func
         
-        stats = run_multiple_times(algo_func, n_runs=n_runs, **run_kwargs)
+        stats = run_multiple_times(algo_func, n_runs=n_runs, seed=seed, minimize=minimize, **run_kwargs)
         comparison[name] = stats
     
     return comparison

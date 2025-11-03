@@ -28,13 +28,11 @@ def run_fa(objective_func, dim, bounds, n_fireflies=25, max_iter=100,
             - 'best_fitness': fitness of best solution
             - 'history': list of best fitness per iteration
     """
-    if seed is not None:
-        np.random.seed(seed)
-    
+    rng = np.random.default_rng(seed)
     lower, upper = bounds
     
     # Initialize firefly positions
-    fireflies = np.random.uniform(lower, upper, (n_fireflies, dim))
+    fireflies = rng.uniform(lower, upper, (n_fireflies, dim))
     intensity = np.array([objective_func(pos) for pos in fireflies])
     
     # For minimization, lower values have higher intensity
@@ -53,24 +51,27 @@ def run_fa(objective_func, dim, bounds, n_fireflies=25, max_iter=100,
         # Update alpha (reduce randomness over time)
         alpha_t = alpha * (0.95 ** iteration)
         
+        # Create a copy of fireflies for this iteration's calculations
+        new_fireflies = fireflies.copy()
+
         # Move fireflies
         for i in range(n_fireflies):
             for j in range(n_fireflies):
                 # If firefly j is brighter than firefly i
                 if light_intensity[j] > light_intensity[i]:
-                    # Calculate distance
+                    # Calculate distance based on original positions
                     r = np.linalg.norm(fireflies[i] - fireflies[j])
                     
                     # Calculate attractiveness
                     beta = beta0 * np.exp(-gamma * r ** 2)
                     
-                    # Move firefly i towards j
-                    fireflies[i] = fireflies[i] + \
-                                  beta * (fireflies[j] - fireflies[i]) + \
-                                  alpha_t * (np.random.rand(dim) - 0.5)
-                    
-                    # Boundary handling
-                    fireflies[i] = np.clip(fireflies[i], lower, upper)
+                    # Move firefly i towards j (update the new_fireflies array)
+                    random_move = alpha_t * (rng.random(dim) - 0.5)
+                    new_fireflies[i] += beta * (fireflies[j] - fireflies[i]) + random_move
+
+        # Apply boundary constraints to the new positions
+        new_fireflies = np.clip(new_fireflies, lower, upper)
+        fireflies = new_fireflies
         
         # Evaluate new positions
         for i in range(n_fireflies):

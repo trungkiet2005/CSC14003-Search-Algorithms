@@ -29,7 +29,7 @@ def plot_history(history, title="Optimization Progress", save_path=None):
 
 
 def plot_convergence_comparison(histories_dict, title="Convergence Comparison", 
-                               save_path=None, log_scale=False):
+                               save_path=None, log_scale=False, xlabel="Iteration"):
     """Compare convergence of multiple algorithms.
     
     Args:
@@ -37,6 +37,7 @@ def plot_convergence_comparison(histories_dict, title="Convergence Comparison",
         title: plot title
         save_path: path to save figure
         log_scale: use log scale for y-axis
+        xlabel: label for the x-axis (e.g., "Iteration", "Nodes Expanded")
     """
     plt.figure(figsize=(12, 7))
     
@@ -44,7 +45,7 @@ def plot_convergence_comparison(histories_dict, title="Convergence Comparison",
         plt.plot(history, label=name, linewidth=2, alpha=0.8)
     
     plt.title(title, fontsize=14)
-    plt.xlabel("Iteration", fontsize=12)
+    plt.xlabel(xlabel, fontsize=12)
     plt.ylabel("Fitness" + (" (log scale)" if log_scale else ""), fontsize=12)
     
     if log_scale:
@@ -249,7 +250,7 @@ def plot_bar_comparison(metrics_dict, metric_name="Mean Fitness",
     plt.show()
 
 
-def plot_tsp_route(cities, route, distance, title="TSP Solution", save_path=None):
+def plot_tsp_route(cities, route, distance, title="TSP Solution", save_path=None, ax=None):
     """Plot TSP route on 2D city map.
     
     Args:
@@ -258,32 +259,38 @@ def plot_tsp_route(cities, route, distance, title="TSP Solution", save_path=None
         distance: total tour distance
         title: plot title
         save_path: path to save figure
+        ax: optional matplotlib axes to plot on
     """
-    plt.figure(figsize=(10, 8))
-    
+    if ax is None:
+        fig, ax = plt.subplots(figsize=(10, 8))
+        show_plot = True
+    else:
+        show_plot = False
+
     # Plot cities
-    plt.scatter(cities[:, 0], cities[:, 1], c='blue', s=100, zorder=3, label='Cities')
+    ax.scatter(cities[:, 0], cities[:, 1], c='blue', s=100, zorder=3, label='Cities')
     
     # Plot route
-    route_cities = cities[route + [route[0]]]
-    plt.plot(route_cities[:, 0], route_cities[:, 1], 
-            'r-', linewidth=2, alpha=0.7, label='Route')
+    if route:
+        route_cities = cities[route + [route[0]]]
+        ax.plot(route_cities[:, 0], route_cities[:, 1], 
+                'r-', linewidth=2, alpha=0.7, label='Route')
     
     # Add city labels
     for i, (x, y) in enumerate(cities):
-        plt.annotate(str(i), (x, y), fontsize=8, ha='center', va='center')
+        ax.annotate(str(i), (x, y), fontsize=8, ha='center', va='center')
     
-    plt.title(f"{title}\nTotal Distance: {distance:.2f}", fontsize=14)
-    plt.xlabel("X Coordinate", fontsize=12)
-    plt.ylabel("Y Coordinate", fontsize=12)
-    plt.legend()
-    plt.grid(True, alpha=0.3)
-    plt.tight_layout()
+    ax.set_title(f"{title}\nTotal Distance: {distance:.2f}", fontsize=14)
+    ax.set_xlabel("X Coordinate", fontsize=12)
+    ax.set_ylabel("Y Coordinate", fontsize=12)
+    ax.legend()
+    ax.grid(True, alpha=0.3)
     
-    if save_path:
-        plt.savefig(save_path, dpi=300, bbox_inches='tight')
-    
-    plt.show()
+    if show_plot:
+        plt.tight_layout()
+        if save_path:
+            plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        plt.show()
 
 
 def ensure_figure_dir(base_path="report/figures"):
