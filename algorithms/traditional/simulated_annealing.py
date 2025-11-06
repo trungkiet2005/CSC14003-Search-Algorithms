@@ -74,3 +74,77 @@ def run_simulated_annealing(objective_func, bounds, dim, max_iter=2500,
         'history': history
     }
 
+
+def run_simulated_annealing_tsp(distance_matrix, max_iter=20000, initial_temp=1000, 
+                                final_temp=1e-3, alpha=0.995, seed=None):
+    """Run Simulated Annealing for TSP.
+
+    Args:
+        distance_matrix: 2D numpy array of distances
+        max_iter: maximum number of iterations
+        initial_temp: starting temperature
+        final_temp: final temperature
+        alpha: cooling rate
+        seed: random seed
+
+    Returns:
+        dict with best distance, best route, and history
+    """
+    rng = np.random.default_rng(seed)
+    n_cities = len(distance_matrix)
+
+    # Initial solution (random route)
+    current_route = list(rng.permutation(n_cities))
+    current_distance = calculate_route_distance(current_route, distance_matrix)
+
+    best_route = current_route
+    best_distance = current_distance
+
+    temp = initial_temp
+    history = [best_distance]
+
+    for i in range(max_iter):
+        if temp <= final_temp:
+            break
+
+        # Generate neighbor (2-opt swap)
+        neighbor_route = current_route.copy()
+        i, j = sorted(rng.choice(range(n_cities), 2, replace=False))
+        neighbor_route[i:j+1] = reversed(neighbor_route[i:j+1])
+        
+        neighbor_distance = calculate_route_distance(neighbor_route, distance_matrix)
+
+        # Acceptance probability
+        delta = neighbor_distance - current_distance
+        if delta < 0 or rng.random() < np.exp(-delta / temp):
+            current_route = neighbor_route
+            current_distance = neighbor_distance
+
+            if current_distance < best_distance:
+                best_route = current_route
+                best_distance = current_distance
+        
+        # Cool down
+        temp *= alpha
+        
+        # Record history
+        if (i + 1) % 100 == 0:
+            history.append(best_distance)
+
+    history.append(best_distance)
+
+    return {
+        'best_distance': best_distance,
+        'best_route': best_route,
+        'history': history
+    }
+
+
+def calculate_route_distance(route, distance_matrix):
+    """Calculate total distance of a route."""
+    distance = 0.0
+    for i in range(len(route)):
+        from_city = route[i]
+        to_city = route[(i + 1) % len(route)]
+        distance += distance_matrix[from_city][to_city]
+    return distance

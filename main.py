@@ -27,7 +27,7 @@ from algorithms.swarm.CS import run_cs
 
 # Import traditional algorithms
 from algorithms.traditional.hill_climbing import run_hill_climbing
-from algorithms.traditional.simulated_annealing import run_simulated_annealing
+from algorithms.traditional.simulated_annealing import run_simulated_annealing, run_simulated_annealing_tsp
 from algorithms.traditional.genetic_algorithm import run_ga
 from algorithms.traditional.BFS import run_bfs_greedy_tsp
 from algorithms.traditional.DFS import run_dfs_tsp
@@ -78,10 +78,10 @@ def run_comparison(algorithms, problem_name, problem_func, n_runs, minimize, see
     
     return results
 
-def run_aco_vs_astar_tsp(n_cities, max_iter):
-    """Compares ACO and A* on the Traveling Salesman Problem."""
+def run_aco_vs_sa_tsp(n_cities, max_iter):
+    """Compares ACO and Simulated Annealing on the Traveling Salesman Problem."""
     print("\n" + "="*80)
-    print("Experiment 1: ACO vs A* on TSP")
+    print("Experiment 1: ACO vs Simulated Annealing on TSP")
     print("="*80)
     
     figures_dir = ensure_figure_dir()
@@ -91,28 +91,13 @@ def run_aco_vs_astar_tsp(n_cities, max_iter):
     
     print(f"\nTesting on TSP with {n_cities} cities")
     
-    aco_history = None
-    astar_history = None
-    astar_route = None
-    astar_distance = None
-    
     print("\nRunning ACO...")
     aco_result = run_aco(dist_matrix, n_ants=30, max_iter=max_iter, seed=42)
     print(f"ACO - Best distance: {aco_result['best_distance']:.2f}")
-    if 'history' in aco_result:
-        aco_history = aco_result['history']
     
-    if n_cities <= 12:
-        print("\nRunning A*...")
-        astar_result = run_astar_tsp(dist_matrix, max_nodes=10000)
-        print(f"A* - Best distance: {astar_result['best_distance']:.2f}")
-        if 'history' in astar_result:
-            astar_history = astar_result['history']
-        if 'best_route' in astar_result:
-            astar_route = astar_result['best_route']
-            astar_distance = astar_result['best_distance']
-    else:
-        print("\nA* is not run for n_cities > 12 due to complexity.")
+    print("\nRunning Simulated Annealing...")
+    sa_result = run_simulated_annealing_tsp(dist_matrix, max_iter=max_iter * 100, seed=42)
+    print(f"SA - Best distance: {sa_result['best_distance']:.2f}")
 
     # Create subplots for displaying TSP routes
     fig, axes = plt.subplots(1, 2, figsize=(20, 8))
@@ -126,39 +111,28 @@ def run_aco_vs_astar_tsp(n_cities, max_iter):
         ax=axes[0]
     )
     
-    # Plot A* TSP route if available
-    if astar_route is not None:
-        plot_tsp_route(
-            cities, astar_route, astar_distance,
-            title=f"TSP Solution - A* ({n_cities} cities)",
-            save_path=f"{figures_dir}/tsp_astar_route.png",
-            ax=axes[1]
-        )
-    else:
-        # If A* was not run, hide the second subplot
-        axes[1].axis('off')
+    # Plot SA TSP route
+    plot_tsp_route(
+        cities, sa_result['best_route'], sa_result['best_distance'],
+        title=f"TSP Solution - SA ({n_cities} cities)",
+        save_path=f"{figures_dir}/tsp_sa_route.png",
+        ax=axes[1]
+    )
 
     plt.tight_layout(rect=[0, 0.03, 1, 0.95])
     plt.show()
     
-    # Plot ACO convergence
-    if aco_history:
-        plot_convergence_comparison(
-            {'ACO': aco_history},
-            title=f"ACO Convergence on TSP ({n_cities} cities)",
-            save_path=f"{figures_dir}/tsp_aco_convergence.png",
-            log_scale=True
-        )
-        
-    # Plot A* convergence if available
-    if astar_history:
-        plot_convergence_comparison(
-            {'A*': astar_history},
-            title=f"A* Convergence on TSP ({n_cities} cities)",
-            save_path=f"{figures_dir}/tsp_astar_convergence.png",
-            xlabel="Nodes Expanded",
-            log_scale=True
-        )
+    # Plot convergence comparison
+    histories = {
+        'ACO': aco_result['history'],
+        'SA': sa_result['history']
+    }
+    plot_convergence_comparison(
+        histories,
+        title=f"ACO vs SA Convergence on TSP ({n_cities} cities)",
+        save_path=f"{figures_dir}/tsp_aco_sa_convergence.png",
+        log_scale=True
+    )
 
 def run_pso_vs_ga_rastrigin(dim, max_iter, n_runs):
     """Compares PSO and GA on the Rastrigin function."""
@@ -210,8 +184,8 @@ def run_cs_vs_sa_ackley(dim, max_iter, n_runs):
     
     problem = CONTINUOUS_PROBLEMS['ackley']
     n_pop = 25  # Population size for CS
-    max_evals = n_pop * max_iter
-
+    max_evals = n_pop * max_.gemini-agent-gen-0
+    
     algorithms = {
         'CS': (run_cs, {'dim': dim, 'bounds': problem['bounds'], 'n_nests': n_pop, 'max_iter': max_iter}),
         'SA': (run_simulated_annealing, {'dim': dim, 'bounds': problem['bounds'], 'max_iter': max_evals, 'pop_size_equiv': n_pop}),
@@ -224,9 +198,9 @@ def main():
     subparsers = parser.add_subparsers(dest="experiment", help="Select the experiment to run.")
 
     # TSP experiment
-    parser_tsp = subparsers.add_parser("aco_vs_astar", help="Run ACO vs A* on TSP.")
-    parser_tsp.add_argument("--n_cities", type=int, default=12, help="Number of cities for TSP.")
-    parser_tsp.add_argument("--max_iter", type=int, default=100, help="Maximum iterations.")
+    parser_tsp = subparsers.add_parser("aco_vs_sa", help="Run ACO vs SA on TSP.")
+    parser_tsp.add_argument("--n_cities", type=int, default=20, help="Number of cities for TSP.")
+    parser_tsp.add_argument("--max_iter", type=int, default=100, help="Maximum iterations for ACO.")
 
     # Rastrigin experiments
     parser_pso_ga = subparsers.add_parser("pso_vs_ga", help="Run PSO vs GA on Rastrigin.")
@@ -252,8 +226,8 @@ def main():
 
     args = parser.parse_args()
 
-    if args.experiment == "aco_vs_astar":
-        run_aco_vs_astar_tsp(n_cities=args.n_cities, max_iter=args.max_iter)
+    if args.experiment == "aco_vs_sa":
+        run_aco_vs_sa_tsp(n_cities=args.n_cities, max_iter=args.max_iter)
     elif args.experiment == "pso_vs_ga":
         run_pso_vs_ga_rastrigin(dim=args.dim, max_iter=args.max_iter, n_runs=args.n_runs)
     elif args.experiment == "abc_vs_ga":
