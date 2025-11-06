@@ -22,6 +22,7 @@ def run_astar_tsp(distance_matrix, max_nodes=10000):
             - 'best_route': best tour found
             - 'best_distance': length of best tour
             - 'nodes_explored': number of nodes explored
+            - 'history': list of best distance at each node expansion
     """
     n_cities = len(distance_matrix)
     
@@ -39,10 +40,12 @@ def run_astar_tsp(distance_matrix, max_nodes=10000):
     best_route = None
     best_distance = float('inf')
     nodes_explored = 0
+    history = []
     
     while pq and nodes_explored < max_nodes:
         f_cost, g_cost, current_route, unvisited = heapq.heappop(pq)
         nodes_explored += 1
+        history.append(best_distance)
         
         # If all cities visited
         if not unvisited:
@@ -74,7 +77,8 @@ def run_astar_tsp(distance_matrix, max_nodes=10000):
     return {
         'best_route': best_route,
         'best_distance': best_distance,
-        'nodes_explored': nodes_explored
+        'nodes_explored': nodes_explored,
+        'history': history
     }
 
 
@@ -98,6 +102,7 @@ def compute_mst_heuristic(current_city, unvisited, distance_matrix):
     
     while len(visited) < len(cities):
         min_edge = float('inf')
+        next_node = -1
         
         for v in visited:
             for u in cities:
@@ -105,16 +110,13 @@ def compute_mst_heuristic(current_city, unvisited, distance_matrix):
                     edge_cost = distance_matrix[v][u]
                     if edge_cost < min_edge:
                         min_edge = edge_cost
+                        next_node = u
         
-        mst_cost += min_edge
-        
-        # Add city that gives minimum edge (simplified)
-        for v in visited:
-            for u in cities:
-                if u not in visited and distance_matrix[v][u] == min_edge:
-                    visited.add(u)
-                    break
-            if len(visited) == len(cities):
-                break
+        if next_node != -1:
+            mst_cost += min_edge
+            visited.add(next_node)
+        else:
+            # Should not happen in a connected graph
+            break
     
     return mst_cost

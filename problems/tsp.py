@@ -80,7 +80,7 @@ def create_tsp_problem(n_cities=20, seed=42):
     Returns:
         dict with 'cities', 'distance_matrix', and 'objective' function
     """
-    cities, dist_matrix = generate_random_tsp(n_cities, seed=seed)
+    cities, dist_matrix = generate_random_tsp(n_cities)
     
     def objective(route):
         """Objective function for TSP (tour length - to minimize)."""
