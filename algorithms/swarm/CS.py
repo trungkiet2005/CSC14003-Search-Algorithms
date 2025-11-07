@@ -1,129 +1,203 @@
-"""Cuckoo Search (CS) Algorithm
+"""algorithms/swarm/cs.py - Improved Cuckoo Search Algorithm
 
 Reference: Yang, X. S., & Deb, S. (2009). Cuckoo search via Lévy flights.
+In 2009 World congress on nature & biologically inspired computing (pp. 210-214).
 """
 
 import numpy as np
+from typing import Callable, Tuple, Optional
+from ..base import PopulationBasedOptimizer, OptimizationResult, run_with_timing
 import math
 
 
-def run_cs(objective_func, dim, bounds, n_nests=25, max_iter=100,
-           pa=0.25, beta=1.5, minimize=True, seed=None):
-    """Run Cuckoo Search optimization.
+class CS(PopulationBasedOptimizer):
+    """Cuckoo Search Algorithm
     
-    Args:
-        objective_func: function to optimize
-        dim: dimensionality of the problem
-        bounds: tuple (lower, upper) for search space
-        n_nests: number of nests (solutions)
-        max_iter: maximum number of iterations
-        pa: probability of discovering alien eggs (0-1)
-        beta: parameter for Lévy flights (typically 1.5)
-        minimize: True for minimization, False for maximization
-        seed: random seed for reproducibility
+    Based on the brood parasitism of cuckoo species combined with Lévy flights.
     
-    Returns:
-        dict with:
-            - 'best_position': best solution found
-            - 'best_fitness': fitness of best solution
-            - 'history': list of best fitness per iteration
+    Key concepts:
+    1. Each cuckoo lays one egg (solution) at a time
+    2. Best nests (solutions) carry over to next generation
+    3. Host bird can discover alien egg with probability pa
+    
+    Attributes:
+        n_nests: Number of nests (solutions)
+        pa: Discovery probability (fraction of worst nests abandoned)
+        beta: Lévy distribution parameter (typically 1.5)
+        step_size_factor: Step size scaling factor
     """
-    if seed is not None:
-        np.random.seed(seed)
     
-    lower, upper = bounds
+    def __init__(self, n_nests: int = 25, pa: float = 0.25,
+                 beta: float = 1.5, step_size_factor: float = 0.01,
+                 seed: Optional[int] = None):
+        super().__init__(population_size=n_nests, seed=seed)
+        self.n_nests = n_nests
+        self.pa = pa
+        self.beta = beta
+        self.step_size_factor = step_size_factor
+        self.name = "CS"
     
-    # Initialize nests
-    nests = np.random.uniform(lower, upper, (n_nests, dim))
-    fitness = np.array([objective_func(pos) for pos in nests])
-    
-    # Initialize best solution
-    if minimize:
-        best_idx = np.argmin(fitness)
-    else:
-        best_idx = np.argmax(fitness)
-    
-    best_nest = nests[best_idx].copy()
-    best_fitness = fitness[best_idx]
-    history = [best_fitness]
-    
-    for iteration in range(max_iter):
-        # Generate new solutions via Lévy flights
-        for i in range(n_nests):
-            # Lévy flight
-            step_size = levy_flight(dim, beta)
-            step_size = 0.01 * step_size * (nests[i] - best_nest)
-            
-            # Generate new solution
-            new_nest = nests[i] + step_size
-            
-            # Boundary handling
-            new_nest = np.clip(new_nest, lower, upper)
-            
-            # Evaluate new solution
-            new_fitness = objective_func(new_nest)
-            
-            # Random nest selection for comparison
-            j = np.random.randint(n_nests)
-            
-            # Replace if better
-            if (minimize and new_fitness < fitness[j]) or \
-               (not minimize and new_fitness > fitness[j]):
-                nests[j] = new_nest
-                fitness[j] = new_fitness
+    @run_with_timing
+    def optimize(self, objective_func: Callable, 
+                dim: int, bounds: Tuple[float, float],
+                max_iter: int = 100, minimize: bool = True,
+                **kwargs) -> OptimizationResult:
+        """
+        Run Cuckoo Search optimization
         
-        # Abandon worst nests (pa fraction)
-        n_abandon = int(pa * n_nests)
+        Args:
+            objective_func: Objective function to optimize
+            dim: Problem dimensionality
+            bounds: (lower, upper) bounds for each dimension
+            max_iter: Maximum number of iterations
+            minimize: True for minimization, False for maximization
+            
+        Returns:
+            OptimizationResult with best solution and history
+        """
+        lower, upper = bounds
+        
+        # Initialize nests
+        nests = self._initialize_population(dim, lower, upper)
+        fitness = self._evaluate_population(nests, objective_func)
+        
+        # Initialize best solution
         if minimize:
-            worst_indices = np.argsort(fitness)[-n_abandon:]
+            best_idx = np.argmin(fitness)
         else:
-            worst_indices = np.argsort(fitness)[:n_abandon]
+            best_idx = np.argmax(fitness)
         
-        for idx in worst_indices:
-            # Replace with random solution
-            nests[idx] = np.random.uniform(lower, upper, dim)
-            fitness[idx] = objective_func(nests[idx])
+        best_nest = nests[best_idx].copy()
+        best_fitness = fitness[best_idx]
+        history = [best_fitness]
+        convergence_iter = None
         
-        # Update best solution
-        if minimize:
-            current_best_idx = np.argmin(fitness)
-            if fitness[current_best_idx] < best_fitness:
-                best_nest = nests[current_best_idx].copy()
-                best_fitness = fitness[current_best_idx]
-        else:
-            current_best_idx = np.argmax(fitness)
-            if fitness[current_best_idx] > best_fitness:
-                best_nest = nests[current_best_idx].copy()
-                best_fitness = fitness[current_best_idx]
+        # Calculate search space scale
+        scale = upper - lower
         
-        history.append(best_fitness)
+        for iteration in range(max_iter):
+            # ==================== LÉVY FLIGHTS ====================
+            # Generate new solutions via Lévy flights
+            for i in range(self.n_nests):
+                # Generate Lévy flight step
+                step = self._levy_flight(dim)
+                
+                # Scale step size
+                step_size = self.step_size_factor * step * scale
+                
+                # Direction towards best solution
+                direction = best_nest - nests[i]
+                
+                # Generate new solution
+                new_nest = nests[i] + step_size * direction + \
+                          self.rng.normal(0, 0.01 * scale, dim)
+                
+                # Boundary handling
+                new_nest = self._clip_bounds(new_nest, lower, upper)
+                
+                # Evaluate new solution
+                new_fitness = objective_func(new_nest)
+                
+                # Random walk: compare with random nest
+                j = self.rng.integers(0, self.n_nests)
+                
+                # Replace if better
+                if (minimize and new_fitness < fitness[j]) or \
+                   (not minimize and new_fitness > fitness[j]):
+                    nests[j] = new_nest
+                    fitness[j] = new_fitness
+            
+            # ==================== ABANDON WORST NESTS ====================
+            # Abandon a fraction pa of worst nests
+            n_abandon = max(1, int(self.pa * self.n_nests))
+            
+            if minimize:
+                worst_indices = np.argsort(fitness)[-n_abandon:]
+            else:
+                worst_indices = np.argsort(fitness)[:n_abandon]
+            
+            # Replace worst nests with new random solutions
+            # Use biased random walk around best solutions
+            for idx in worst_indices:
+                if self.rng.random() < self.pa:
+                    # Generate new solution using random walk
+                    # Select two random nests
+                    k1, k2 = self.rng.choice(self.n_nests, 2, replace=False)
+                    
+                    # Random walk
+                    step_size = self.rng.random() * (nests[k1] - nests[k2])
+                    new_nest = nests[idx] + step_size
+                    
+                    # Boundary handling
+                    new_nest = self._clip_bounds(new_nest, lower, upper)
+                    
+                    nests[idx] = new_nest
+                    fitness[idx] = objective_func(new_nest)
+            
+            # ==================== UPDATE BEST ====================
+            if minimize:
+                current_best_idx = np.argmin(fitness)
+                if fitness[current_best_idx] < best_fitness:
+                    best_nest = nests[current_best_idx].copy()
+                    best_fitness = fitness[current_best_idx]
+            else:
+                current_best_idx = np.argmax(fitness)
+                if fitness[current_best_idx] > best_fitness:
+                    best_nest = nests[current_best_idx].copy()
+                    best_fitness = fitness[current_best_idx]
+            
+            history.append(best_fitness)
+            
+            # Check convergence
+            if convergence_iter is None:
+                convergence_iter = self._check_convergence(history)
+        
+        return OptimizationResult(
+            best_position=best_nest,
+            best_fitness=best_fitness,
+            history=history,
+            convergence_iter=convergence_iter,
+            final_nests=nests
+        )
     
-    return {
-        'best_position': best_nest,
-        'best_fitness': best_fitness,
-        'history': history,
-        'nests': nests
-    }
+    def _levy_flight(self, dim: int) -> np.ndarray:
+        """
+        Generate Lévy flight step using Mantegna's method
+        
+        Lévy distribution: L(s) ~ s^(-1-β) for large s
+        
+        Args:
+            dim: Dimensionality of the step
+            
+        Returns:
+            Lévy flight step vector
+        """
+        beta = self.beta
+        
+        # Calculate sigma using Mantegna's method
+        numerator = math.gamma(1 + beta) * np.sin(np.pi * beta / 2)
+        denominator = math.gamma((1 + beta) / 2) * beta * (2 ** ((beta - 1) / 2))
+        sigma_u = (numerator / denominator) ** (1 / beta)
+        
+        # Generate step
+        u = self.rng.normal(0, sigma_u, dim)
+        v = self.rng.normal(0, 1, dim)
+        
+        # Lévy step
+        step = u / (np.abs(v) ** (1 / beta))
+        
+        return step
 
 
-def levy_flight(dim, beta=1.5):
-    """Generate Lévy flight step using Mantegna's method.
-    
-    Args:
-        dim: dimensionality
-        beta: parameter (typically 1.5)
-    
-    Returns:
-        numpy array: Lévy flight step
+def run_cs(objective_func: Callable, dim: int, bounds: Tuple[float, float],
+          n_nests: int = 25, max_iter: int = 100, pa: float = 0.25,
+          beta: float = 1.5, minimize: bool = True, 
+          seed: Optional[int] = None) -> dict:
     """
-    # Mantegna's method
-    sigma_u = (math.gamma(1 + beta) * np.sin(np.pi * beta / 2) /
-               (math.gamma((1 + beta) / 2) * beta * 2 ** ((beta - 1) / 2))) ** (1 / beta)
+    Convenience function to run Cuckoo Search
     
-    u = np.random.normal(0, sigma_u, dim)
-    v = np.random.normal(0, 1, dim)
-    
-    step = u / (np.abs(v) ** (1 / beta))
-    
-    return step
-
+    Returns dictionary for backward compatibility
+    """
+    cs = CS(n_nests=n_nests, pa=pa, beta=beta, seed=seed)
+    result = cs.optimize(objective_func, dim, bounds, max_iter, minimize)
+    return result.to_dict()

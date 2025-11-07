@@ -1,152 +1,243 @@
-"""Artificial Bee Colony (ABC) Algorithm
+"""algorithms/swarm/abc.py - Improved Artificial Bee Colony Algorithm
 
-Reference: Karaboga, D., & Basturk, B. (2007). 
-A powerful and efficient algorithm for numerical function optimization.
+Reference: Karaboga, D., & Basturk, B. (2007). A powerful and efficient 
+algorithm for numerical function optimization: artificial bee colony (ABC) algorithm.
 """
 
 import numpy as np
+from typing import Callable, Tuple, Optional
+from ..base import PopulationBasedOptimizer, OptimizationResult, run_with_timing
 
 
-def run_abc(objective_func, dim, bounds, n_bees=30, max_iter=100, 
-            limit=50, minimize=True, seed=None):
-    """Run Artificial Bee Colony optimization.
+class ABC(PopulationBasedOptimizer):
+    """Artificial Bee Colony Algorithm
     
-    Args:
-        objective_func: function to optimize
-        dim: dimensionality of the problem
-        bounds: tuple (lower, upper) for search space
-        n_bees: number of employed bees (total bees = 2 * n_bees)
-        max_iter: maximum number of iterations
-        limit: abandonment limit for scout bees
-        minimize: True for minimization, False for maximization
-        seed: random seed for reproducibility
+    Three phases:
+    1. Employed bee phase: Each employed bee searches around its food source
+    2. Onlooker bee phase: Onlooker bees select food sources based on probability
+    3. Scout bee phase: Exhausted food sources are abandoned and replaced
     
-    Returns:
-        dict with:
-            - 'best_position': best solution found
-            - 'best_fitness': fitness of best solution
-            - 'history': list of best fitness per iteration
+    Attributes:
+        n_bees: Number of employed bees (total population = 2 * n_bees)
+        limit: Abandonment limit for scout bees
+        modification_rate: Rate of dimension modification
     """
-    if seed is not None:
-        np.random.seed(seed)
     
-    lower, upper = bounds
+    def __init__(self, n_bees: int = 30, limit: int = None,
+                 modification_rate: float = 1.0,
+                 seed: Optional[int] = None):
+        super().__init__(population_size=n_bees, seed=seed)
+        self.n_bees = n_bees
+        self.limit = limit  # Will be set based on problem if None
+        self.modification_rate = modification_rate
+        self.name = "ABC"
     
-    # Initialize food sources (solutions)
-    food_sources = np.random.uniform(lower, upper, (n_bees, dim))
-    fitness = np.array([objective_func(pos) for pos in food_sources])
-    
-    # Track number of trials for each food source
-    trial = np.zeros(n_bees)
-    
-    # Initialize best solution
-    if minimize:
-        best_idx = np.argmin(fitness)
-    else:
-        best_idx = np.argmax(fitness)
-    
-    best_position = food_sources[best_idx].copy()
-    best_fitness = fitness[best_idx]
-    history = [best_fitness]
-    
-    for iteration in range(max_iter):
-        # Employed bee phase
-        for i in range(n_bees):
-            # Generate new candidate solution
-            new_solution = employed_bee_phase(food_sources, i, lower, upper, dim)
-            new_fitness = objective_func(new_solution)
+    @run_with_timing
+    def optimize(self, objective_func: Callable, 
+                dim: int, bounds: Tuple[float, float],
+                max_iter: int = 100, minimize: bool = True,
+                **kwargs) -> OptimizationResult:
+        """
+        Run ABC optimization
+        
+        Args:
+            objective_func: Objective function to optimize
+            dim: Problem dimensionality
+            bounds: (lower, upper) bounds for each dimension
+            max_iter: Maximum number of iterations
+            minimize: True for minimization, False for maximization
             
-            # Greedy selection
-            if (minimize and new_fitness < fitness[i]) or \
-               (not minimize and new_fitness > fitness[i]):
-                food_sources[i] = new_solution
-                fitness[i] = new_fitness
-                trial[i] = 0
-            else:
-                trial[i] += 1
+        Returns:
+            OptimizationResult with best solution and history
+        """
+        lower, upper = bounds
         
-        # Calculate probabilities for onlooker bees
-        probabilities = calculate_probabilities(fitness, minimize)
-        
-        # Onlooker bee phase
-        for i in range(n_bees):
-            # Select food source based on probability
-            selected = np.random.choice(n_bees, p=probabilities)
-            
-            # Generate new candidate solution
-            new_solution = employed_bee_phase(food_sources, selected, lower, upper, dim)
-            new_fitness = objective_func(new_solution)
-            
-            # Greedy selection
-            if (minimize and new_fitness < fitness[selected]) or \
-               (not minimize and new_fitness > fitness[selected]):
-                food_sources[selected] = new_solution
-                fitness[selected] = new_fitness
-                trial[selected] = 0
-            else:
-                trial[selected] += 1
-        
-        # Scout bee phase
-        for i in range(n_bees):
-            if trial[i] > limit:
-                # Abandon food source and generate new one
-                food_sources[i] = np.random.uniform(lower, upper, dim)
-                fitness[i] = objective_func(food_sources[i])
-                trial[i] = 0
-        
-        # Update best solution
-        if minimize:
-            current_best_idx = np.argmin(fitness)
-            if fitness[current_best_idx] < best_fitness:
-                best_position = food_sources[current_best_idx].copy()
-                best_fitness = fitness[current_best_idx]
+        # Set limit if not provided (common: limit = dim * n_bees)
+        if self.limit is None:
+            limit = dim * self.n_bees
         else:
-            current_best_idx = np.argmax(fitness)
-            if fitness[current_best_idx] > best_fitness:
-                best_position = food_sources[current_best_idx].copy()
-                best_fitness = fitness[current_best_idx]
+            limit = self.limit
         
-        history.append(best_fitness)
+        # Initialize food sources (solutions)
+        food_sources = self._initialize_population(dim, lower, upper)
+        fitness = self._evaluate_population(food_sources, objective_func)
+        
+        # Convert fitness for probability calculation (higher is better)
+        if minimize:
+            fitness_values = 1.0 / (1.0 + fitness)
+        else:
+            fitness_values = fitness.copy()
+        
+        # Track number of trials for each food source
+        trials = np.zeros(self.n_bees, dtype=int)
+        
+        # Initialize best solution
+        if minimize:
+            best_idx = np.argmin(fitness)
+        else:
+            best_idx = np.argmax(fitness)
+        
+        best_position = food_sources[best_idx].copy()
+        best_fitness = fitness[best_idx]
+        history = [best_fitness]
+        convergence_iter = None
+        
+        for iteration in range(max_iter):
+            # ==================== EMPLOYED BEE PHASE ====================
+            for i in range(self.n_bees):
+                # Generate new candidate solution
+                new_solution = self._generate_neighbor(
+                    food_sources, i, dim, lower, upper
+                )
+                new_fitness = objective_func(new_solution)
+                
+                # Convert for comparison
+                if minimize:
+                    new_fitness_val = 1.0 / (1.0 + new_fitness)
+                else:
+                    new_fitness_val = new_fitness
+                
+                # Greedy selection
+                if (minimize and new_fitness < fitness[i]) or \
+                   (not minimize and new_fitness > fitness[i]):
+                    food_sources[i] = new_solution
+                    fitness[i] = new_fitness
+                    fitness_values[i] = new_fitness_val
+                    trials[i] = 0
+                else:
+                    trials[i] += 1
+            
+            # ==================== ONLOOKER BEE PHASE ====================
+            # Calculate selection probabilities
+            probabilities = self._calculate_probabilities(fitness_values)
+            
+            # Onlooker bees select food sources based on probability
+            onlooker_count = 0
+            t = 0
+            while onlooker_count < self.n_bees and t < self.n_bees * 10:
+                # Roulette wheel selection
+                if self.rng.random() < probabilities[t % self.n_bees]:
+                    selected = t % self.n_bees
+                    
+                    # Generate new candidate solution
+                    new_solution = self._generate_neighbor(
+                        food_sources, selected, dim, lower, upper
+                    )
+                    new_fitness = objective_func(new_solution)
+                    
+                    # Convert for comparison
+                    if minimize:
+                        new_fitness_val = 1.0 / (1.0 + new_fitness)
+                    else:
+                        new_fitness_val = new_fitness
+                    
+                    # Greedy selection
+                    if (minimize and new_fitness < fitness[selected]) or \
+                       (not minimize and new_fitness > fitness[selected]):
+                        food_sources[selected] = new_solution
+                        fitness[selected] = new_fitness
+                        fitness_values[selected] = new_fitness_val
+                        trials[selected] = 0
+                    else:
+                        trials[selected] += 1
+                    
+                    onlooker_count += 1
+                
+                t += 1
+            
+            # ==================== SCOUT BEE PHASE ====================
+            # Find and abandon exhausted food sources
+            max_trial_idx = np.argmax(trials)
+            if trials[max_trial_idx] >= limit:
+                # Scout bee generates new random food source
+                food_sources[max_trial_idx] = self._random_position(dim, lower, upper)
+                fitness[max_trial_idx] = objective_func(food_sources[max_trial_idx])
+                
+                if minimize:
+                    fitness_values[max_trial_idx] = 1.0 / (1.0 + fitness[max_trial_idx])
+                else:
+                    fitness_values[max_trial_idx] = fitness[max_trial_idx]
+                
+                trials[max_trial_idx] = 0
+            
+            # Update best solution
+            if minimize:
+                current_best_idx = np.argmin(fitness)
+                if fitness[current_best_idx] < best_fitness:
+                    best_position = food_sources[current_best_idx].copy()
+                    best_fitness = fitness[current_best_idx]
+            else:
+                current_best_idx = np.argmax(fitness)
+                if fitness[current_best_idx] > best_fitness:
+                    best_position = food_sources[current_best_idx].copy()
+                    best_fitness = fitness[current_best_idx]
+            
+            history.append(best_fitness)
+            
+            # Check convergence
+            if convergence_iter is None:
+                convergence_iter = self._check_convergence(history)
+        
+        return OptimizationResult(
+            best_position=best_position,
+            best_fitness=best_fitness,
+            history=history,
+            convergence_iter=convergence_iter,
+            final_food_sources=food_sources,
+            final_trials=trials
+        )
     
-    return {
-        'best_position': best_position,
-        'best_fitness': best_fitness,
-        'history': history,
-        'food_sources': food_sources
-    }
+    def _generate_neighbor(self, food_sources: np.ndarray, i: int,
+                          dim: int, lower: float, upper: float) -> np.ndarray:
+        """Generate neighbor solution for employed/onlooker bee"""
+        # Select random neighbor (different from i)
+        k = self.rng.integers(0, self.n_bees)
+        while k == i:
+            k = self.rng.integers(0, self.n_bees)
+        
+        # Select random dimension(s) to modify
+        num_dims_to_modify = max(1, int(self.modification_rate * dim))
+        dims_to_modify = self.rng.choice(dim, num_dims_to_modify, replace=False)
+        
+        # Generate new solution
+        new_solution = food_sources[i].copy()
+        
+        for j in dims_to_modify:
+            # phi in [-1, 1]
+            phi = self.rng.uniform(-1, 1)
+            new_solution[j] = food_sources[i][j] + \
+                            phi * (food_sources[i][j] - food_sources[k][j])
+        
+        # Boundary handling
+        new_solution = self._clip_bounds(new_solution, lower, upper)
+        
+        return new_solution
+    
+    def _calculate_probabilities(self, fitness_values: np.ndarray) -> np.ndarray:
+        """Calculate selection probabilities for onlooker bees"""
+        # Ensure all fitness values are positive
+        min_fitness = np.min(fitness_values)
+        if min_fitness < 0:
+            fitness_values = fitness_values - min_fitness + 1e-10
+        
+        # Add small constant to avoid division by zero
+        fitness_values = fitness_values + 1e-10
+        
+        # Calculate probabilities
+        total_fitness = np.sum(fitness_values)
+        probabilities = fitness_values / total_fitness
+        
+        return probabilities
 
 
-def employed_bee_phase(food_sources, i, lower, upper, dim):
-    """Generate new solution in employed bee phase."""
-    n_bees = len(food_sources)
+def run_abc(objective_func: Callable, dim: int, bounds: Tuple[float, float],
+           n_bees: int = 30, max_iter: int = 100, limit: int = None,
+           minimize: bool = True, seed: Optional[int] = None) -> dict:
+    """
+    Convenience function to run ABC
     
-    # Select random dimension and neighbor
-    k = np.random.randint(n_bees)
-    while k == i:
-        k = np.random.randint(n_bees)
-    
-    j = np.random.randint(dim)
-    
-    # Generate new solution
-    phi = np.random.uniform(-1, 1)
-    new_solution = food_sources[i].copy()
-    new_solution[j] = food_sources[i][j] + phi * (food_sources[i][j] - food_sources[k][j])
-    
-    # Boundary handling
-    new_solution = np.clip(new_solution, lower, upper)
-    
-    return new_solution
-
-
-def calculate_probabilities(fitness, minimize):
-    """Calculate selection probabilities for onlooker bees."""
-    if minimize:
-        # For minimization, convert to maximization by inverting
-        max_fitness = np.max(fitness)
-        adjusted_fitness = max_fitness - fitness + 1e-10
-    else:
-        adjusted_fitness = fitness - np.min(fitness) + 1e-10
-    
-    probabilities = adjusted_fitness / np.sum(adjusted_fitness)
-    return probabilities
-
+    Returns dictionary for backward compatibility
+    """
+    abc = ABC(n_bees=n_bees, limit=limit, seed=seed)
+    result = abc.optimize(objective_func, dim, bounds, max_iter, minimize)
+    return result.to_dict()
