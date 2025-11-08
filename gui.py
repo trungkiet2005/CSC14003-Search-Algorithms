@@ -22,6 +22,7 @@ from algorithms.swarm.CS import run_cs
 
 from algorithms.traditional.simulated_annealing import run_simulated_annealing, run_simulated_annealing_tsp
 from algorithms.traditional.genetic_algorithm import run_ga
+from algorithms.traditional.hill_climbing import run_hill_climbing
 
 # Import problems
 from problems.continuous import get_problem
@@ -222,7 +223,7 @@ class App(customtkinter.CTk):
             self.sidebar_frame, 
             values=[
                 "ACO vs SA (TSP)", 
-                "PSO vs GA (Rastrigin)", 
+                "PSO vs HC (Rastrigin)", 
                 "ABC vs GA (Rastrigin)", 
                 "FA vs SA (Ackley)", 
                 "CS vs SA (Ackley)"
@@ -418,9 +419,9 @@ class App(customtkinter.CTk):
 
                 problem_name = ""
                 algorithms = {}
-                if experiment == "PSO vs GA (Rastrigin)":
+                if experiment == "PSO vs HC (Rastrigin)":
                     problem_name = "rastrigin"
-                    algorithms = {'PSO': (run_pso, {'n_particles': 30}), 'GA': (run_ga, {'pop_size': 50})}
+                    algorithms = {'PSO': (run_pso, {'n_particles': 30}), 'HC': (run_hill_climbing, {'step_size': 0.1, 'random_restart': 5})}
                 elif experiment == "ABC vs GA (Rastrigin)":
                     problem_name = "rastrigin"
                     algorithms = {'ABC': (run_abc, {'n_bees': 30}), 'GA': (run_ga, {'pop_size': 50})}
