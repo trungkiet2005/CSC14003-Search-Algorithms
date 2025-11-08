@@ -1,7 +1,14 @@
 """utils/visualize.py - Enhanced visualization utilities"""
 
+from __future__ import annotations
 import numpy as np
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from utils.benchmark import AlgorithmStats
 import matplotlib.pyplot as plt
+import matplotlib
+matplotlib.use('Agg') 
 from matplotlib import cm
 from mpl_toolkits.mplot3d import Axes3D
 import seaborn as sns
@@ -448,3 +455,96 @@ def plot_comparison_table(df: pd.DataFrame,
         print(f"Saved: {save_path}")
     
     plt.show()
+
+
+def plot_scalability_comparison(scalability_data: Dict[str, Dict[str, List]],
+                                    title: str = "Scalability Analysis") -> plt.Figure:
+    """
+    Plot scalability of algorithms.
+    
+    Args:
+        scalability_data: Dict of {algo_name: {'dims': [...], 'fitness': [...], 'times': [...]}}
+        title: Main title for the figure.
+        
+    Returns:
+        A matplotlib Figure object.
+    """
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(18, 7))
+    fig.suptitle(title, fontsize=18, fontweight='bold')
+    
+    colors = sns.color_palette("husl", len(scalability_data))
+    
+    # 1. Fitness vs. Dimensions
+    for (algo_name, data), color in zip(scalability_data.items(), colors):
+        ax1.plot(data['dims'], data['fitness'], marker='o', linestyle='-', color=color, label=algo_name)
+    ax1.set_title("Fitness vs. Problem Size", fontsize=14)
+    ax1.set_xlabel("Problem Dimension", fontsize=12)
+    ax1.set_ylabel("Best Fitness", fontsize=12)
+    ax1.legend()
+    ax1.grid(True, linestyle='--', alpha=0.6)
+    
+    # 2. Time vs. Dimensions
+    for (algo_name, data), color in zip(scalability_data.items(), colors):
+        ax2.plot(data['dims'], data['times'], marker='o', linestyle='-', color=color, label=algo_name)
+    ax2.set_title("Execution Time vs. Problem Size", fontsize=14)
+    ax2.set_xlabel("Problem Dimension", fontsize=12)
+    ax2.set_ylabel("Mean Time (seconds)", fontsize=12)
+    ax2.legend()
+    ax2.grid(True, linestyle='--', alpha=0.6)
+    
+    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+    return fig
+
+
+
+def plot_complexity_comparison(stats_list: List,
+                               title: str = "Computational Complexity Comparison",
+                               ) -> plt.Figure:
+    """
+    Create bar charts comparing execution time and memory usage.
+    
+    Args:
+        stats_list: List of AlgorithmStats objects from benchmark runner.
+        title: The main title for the figure.
+        
+    Returns:
+        A matplotlib Figure object containing the plots.
+    """
+    algo_names = [s.algorithm_name for s in stats_list]
+    mean_times = [s.mean_time for s in stats_list]
+    mean_mems = [getattr(s, 'mean_mem', 0.0) for s in stats_list]
+    
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6))
+    fig.suptitle(title, fontsize=16, fontweight='bold')
+    
+    colors = sns.color_palette("viridis", len(algo_names))
+    
+    # 1. Execution Time Plot
+    bars1 = ax1.bar(algo_names, mean_times, color=colors, alpha=0.8)
+    ax1.set_title("Mean Execution Time", fontsize=14)
+    ax1.set_ylabel("Time (seconds)", fontsize=12)
+    plt.setp(ax1.xaxis.get_majorticklabels(), rotation=45, ha='right')
+    ax1.grid(True, axis='y', linestyle='--', alpha=0.6)
+    
+    # Add value annotations for time
+    for bar in bars1:
+        yval = bar.get_height()
+        ax1.text(bar.get_x() + bar.get_width()/2.0, yval, f'{yval:.4f}s', 
+                 va='bottom', ha='center', fontsize=9)
+
+    # 2. Memory Usage Plot
+    bars2 = ax2.bar(algo_names, mean_mems, color=colors, alpha=0.8)
+    ax2.set_title("Mean Peak Memory Usage", fontsize=14)
+    ax2.set_ylabel("Memory (MB)", fontsize=12)
+    plt.setp(ax2.xaxis.get_majorticklabels(), rotation=45, ha='right')
+    ax2.grid(True, axis='y', linestyle='--', alpha=0.6)
+
+    # Add value annotations for memory
+    for bar in bars2:
+        yval = bar.get_height()
+        ax2.text(bar.get_x() + bar.get_width()/2.0, yval, f'{yval:.3f}MB', 
+                 va='bottom', ha='center', fontsize=9)
+
+    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+    
+    return fig

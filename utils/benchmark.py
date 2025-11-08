@@ -7,6 +7,7 @@ from typing import Callable, Dict, Any, List, Tuple, Optional
 from dataclasses import dataclass, asdict
 from tqdm import tqdm
 import json
+import tracemalloc
 
 
 @dataclass
@@ -30,6 +31,10 @@ class AlgorithmStats:
     mean_time: float
     std_time: float
     total_time: float
+
+    # Memory statistics (in MB)
+    mean_mem: float
+    std_mem: float
     
     # Convergence statistics
     mean_convergence_iter: Optional[float] = None
@@ -38,6 +43,7 @@ class AlgorithmStats:
     # Raw data
     all_fitnesses: List[float] = None
     all_times: List[float] = None
+    all_mems: List[float] = None
     results: List[Any] = None
     
     def to_dict(self):
@@ -46,6 +52,8 @@ class AlgorithmStats:
         # Remove raw data for cleaner output
         d.pop('all_fitnesses', None)
         d.pop('all_times', None)
+        d.pop('all_mems', None)
+        d.pop('results', None)
         return d
 
 
@@ -77,6 +85,7 @@ class BenchmarkRunner:
         """
         results = []
         times = []
+        mems = []
         best_fitnesses = []
         convergence_iters = []
         
@@ -86,12 +95,18 @@ class BenchmarkRunner:
             # Generate unique seed for this run
             run_seed = self.rng.integers(0, 2**31 - 1)
             
-            # Time execution
+            # Trace memory and time
+            tracemalloc.start()
             start_time = time.perf_counter()
+            
             result = algorithm_func(objective_func=objective_func, seed=run_seed, minimize=minimize, **kwargs)
+            
             end_time = time.perf_counter()
+            _, peak_mem = tracemalloc.get_traced_memory()
+            tracemalloc.stop()
             
             execution_time = end_time - start_time
+            peak_mem_mb = peak_mem / (1024 * 1024)
             
             # Extract results
             if isinstance(result, dict):
@@ -105,6 +120,7 @@ class BenchmarkRunner:
             
             results.append(result)
             times.append(execution_time)
+            mems.append(peak_mem_mb)
             best_fitnesses.append(best_fitness)
             if convergence_iter is not None:
                 convergence_iters.append(convergence_iter)
@@ -112,6 +128,7 @@ class BenchmarkRunner:
         # Calculate statistics
         best_fitnesses = np.array(best_fitnesses)
         times = np.array(times)
+        mems = np.array(mems)
         
         stats = {
             'results': results,
@@ -126,8 +143,11 @@ class BenchmarkRunner:
             'mean_time': np.mean(times),
             'std_time': np.std(times),
             'total_time': np.sum(times),
+            'mean_mem': np.mean(mems),
+            'std_mem': np.std(mems),
             'all_fitnesses': best_fitnesses.tolist(),
-            'all_times': times.tolist()
+            'all_times': times.tolist(),
+            'all_mems': mems.tolist()
         }
         
         # Add convergence statistics if available
@@ -191,10 +211,13 @@ class BenchmarkRunner:
                 mean_time=stats['mean_time'],
                 std_time=stats['std_time'],
                 total_time=stats['total_time'],
+                mean_mem=stats['mean_mem'],
+                std_mem=stats['std_mem'],
                 mean_convergence_iter=stats.get('mean_convergence_iter'),
                 convergence_rate=stats.get('convergence_rate'),
                 all_fitnesses=stats['all_fitnesses'],
                 all_times=stats['all_times'],
+                all_mems=stats['all_mems'],
                 results=stats['results']
             )
             
