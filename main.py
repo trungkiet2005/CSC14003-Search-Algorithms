@@ -259,9 +259,9 @@ def main():
     # Experiment command
     exp_parser = subparsers.add_parser('experiment', help='Run specific experiment')
     exp_parser.add_argument('--name', required=True, 
-                           choices=['pso_vs_ga', 'abc_vs_ga', 'fa_vs_sa', 
-                                   'cs_vs_sa', 'aco_vs_sa', 'all_swarm'],
-                           help='Experiment name')
+                            choices=['pso_vs_hc', 'abc_vs_ga', 'fa_vs_sa', 
+                                    'cs_vs_sa', 'aco_vs_sa', 'all_swarm'],
+                            help='Experiment name')
     exp_parser.add_argument('--problem', default='rastrigin',
                            choices=list(CONTINUOUS_PROBLEMS.keys()) + ['tsp'],
                            help='Problem to solve')
@@ -295,10 +295,10 @@ def main():
         
         # Define experiment configurations
         experiments = {
-            'pso_vs_ga': {
+            'pso_vs_hc': {
                 'algorithms': {
                     'PSO': (run_pso, {'n_particles': 30}),
-                    'GA': (run_ga, {'pop_size': 50})
+                    'HC': (run_hill_climbing, {'step_size': 0.1, 'random_restart': 5})
                 }
             },
             'abc_vs_ga': {
