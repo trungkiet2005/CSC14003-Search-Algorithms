@@ -16,6 +16,7 @@ class ComparisonTab:
         self.is_running = False
         self.current_view = "convergence"
         self.metric_data = {}
+        self.param_entries = {}
         
         # Configure grid
         parent.grid_columnconfigure(1, weight=1)
@@ -29,7 +30,7 @@ class ComparisonTab:
         """Create sidebar with controls"""
         self.sidebar_frame = customtkinter.CTkFrame(self.parent, width=300, corner_radius=10)
         self.sidebar_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 10), pady=0)
-        self.sidebar_frame.grid_rowconfigure(10, weight=1)
+        self.sidebar_frame.grid_rowconfigure(6, weight=1) # Make param frame expandable
         
         # Title
         title = customtkinter.CTkLabel(
@@ -81,11 +82,12 @@ class ComparisonTab:
             text="Parameters",
             font=customtkinter.CTkFont(size=13, weight="bold")
         )
-        params_label.grid(row=5, column=0, padx=20, pady=(10, 10), sticky="w")
+        params_label.grid(row=5, column=0, padx=20, pady=(10, 5), sticky="w")
         
-        self.params_frame = customtkinter.CTkFrame(self.sidebar_frame, fg_color="transparent")
-        self.params_frame.grid(row=6, column=0, padx=20, pady=(0, 15), sticky="ew")
-        
+        self.params_frame = customtkinter.CTkScrollableFrame(self.sidebar_frame, label_text="Experiment Parameters")
+        self.params_frame.grid(row=6, column=0, padx=20, pady=0, sticky="nsew")
+        self.params_frame.grid_columnconfigure(0, weight=1)
+
         # Separator
         sep2 = customtkinter.CTkFrame(self.sidebar_frame, height=2, fg_color=("gray70", "gray30"))
         sep2.grid(row=7, column=0, padx=20, pady=15, sticky="ew")
@@ -122,7 +124,7 @@ class ComparisonTab:
             font=customtkinter.CTkFont(size=11),
             text_color=("gray50", "gray50")
         )
-        self.status_label.grid(row=11, column=0, padx=20, pady=(10, 20), sticky="s")
+        self.status_label.grid(row=10, column=0, padx=20, pady=(10, 20), sticky="s")
         
         # Set default
         self.change_experiment(self.comparison_menu.get())
@@ -231,50 +233,71 @@ class ComparisonTab:
             textbox.pack(fill="both", expand=True, padx=5, pady=5)
             textbox.insert("0.0", str(data))
             textbox.configure(state="disabled")
-            
+
+    def _add_param_entry(self, parent, row, key, label_text, placeholder, type_):
+        label = customtkinter.CTkLabel(parent, text=label_text, font=customtkinter.CTkFont(size=11))
+        label.grid(row=row, column=0, padx=0, pady=(5, 2), sticky="w")
+        
+        entry = customtkinter.CTkEntry(parent, placeholder_text=str(placeholder), width=260, height=30)
+        entry.grid(row=row + 1, column=0, padx=0, pady=(0, 8), sticky="ew")
+        
+        self.param_entries[key] = (entry, type_)
+        return row + 2
+
     def change_experiment(self, experiment: str):
         """Update parameter inputs based on selected experiment"""
-        # Clear old widgets
         for widget in self.params_frame.winfo_children():
             widget.destroy()
+        self.param_entries = {}
         
+        row = 0
+        # General parameters
         if "TSP" in experiment:
-            # Number of cities
-            cities_label = customtkinter.CTkLabel(self.params_frame, text="Number of Cities:", font=customtkinter.CTkFont(size=11))
-            cities_label.grid(row=0, column=0, padx=0, pady=(5, 2), sticky="w")
-            self.n_cities_entry = customtkinter.CTkEntry(self.params_frame, placeholder_text="20", width=260, height=30)
-            self.n_cities_entry.grid(row=1, column=0, padx=0, pady=(0, 8), sticky="ew")
-            
-            # Max iterations
-            iter_label = customtkinter.CTkLabel(self.params_frame, text="Max Iterations:", font=customtkinter.CTkFont(size=11))
-            iter_label.grid(row=2, column=0, padx=0, pady=(5, 2), sticky="w")
-            self.max_iter_entry = customtkinter.CTkEntry(self.params_frame, placeholder_text="100", width=260, height=30)
-            self.max_iter_entry.grid(row=3, column=0, padx=0, pady=(0, 8), sticky="ew")
-
-            # Number of runs
-            runs_label = customtkinter.CTkLabel(self.params_frame, text="Number of Runs:", font=customtkinter.CTkFont(size=11))
-            runs_label.grid(row=4, column=0, padx=0, pady=(5, 2), sticky="w")
-            self.n_runs_entry = customtkinter.CTkEntry(self.params_frame, placeholder_text="5", width=260, height=30)
-            self.n_runs_entry.grid(row=5, column=0, padx=0, pady=(0, 0), sticky="ew")
+            row = self._add_param_entry(self.params_frame, row, "n_cities", "Num Cities:", 20, int)
         else:
-            # Dimensions
-            dim_label = customtkinter.CTkLabel(self.params_frame, text="Dimensions:", font=customtkinter.CTkFont(size=11))
-            dim_label.grid(row=0, column=0, padx=0, pady=(5, 2), sticky="w")
-            self.dim_entry = customtkinter.CTkEntry(self.params_frame, placeholder_text="10", width=260, height=30)
-            self.dim_entry.grid(row=1, column=0, padx=0, pady=(0, 8), sticky="ew")
-            
-            # Max iterations
-            iter_label = customtkinter.CTkLabel(self.params_frame, text="Max Iterations:", font=customtkinter.CTkFont(size=11))
-            iter_label.grid(row=2, column=0, padx=0, pady=(5, 2), sticky="w")
-            self.max_iter_entry = customtkinter.CTkEntry(self.params_frame, placeholder_text="100", width=260, height=30)
-            self.max_iter_entry.grid(row=3, column=0, padx=0, pady=(0, 8), sticky="ew")
-            
-            # Number of runs
-            runs_label = customtkinter.CTkLabel(self.params_frame, text="Number of Runs:", font=customtkinter.CTkFont(size=11))
-            runs_label.grid(row=4, column=0, padx=0, pady=(5, 2), sticky="w")
-            self.n_runs_entry = customtkinter.CTkEntry(self.params_frame, placeholder_text="5", width=260, height=30)
-            self.n_runs_entry.grid(row=5, column=0, padx=0, pady=(0, 0), sticky="ew")
-            
+            row = self._add_param_entry(self.params_frame, row, "dim", "Dimensions:", 10, int)
+        
+        row = self._add_param_entry(self.params_frame, row, "max_iter", "Max Iterations:", 100, int)
+        row = self._add_param_entry(self.params_frame, row, "n_runs", "Num Runs:", 10, int)
+
+        # Separator
+        sep = customtkinter.CTkFrame(self.params_frame, height=2, fg_color=("gray70", "gray30"))
+        sep.grid(row=row, column=0, padx=0, pady=10, sticky="ew")
+        row += 1
+
+        # Algorithm-specific parameters
+        if experiment == "ACO vs SA (TSP)":
+            row = self._add_param_entry(self.params_frame, row, "ACO_n_ants", "ACO: Num Ants:", 50, int)
+            row = self._add_param_entry(self.params_frame, row, "ACO_alpha", "ACO: Alpha:", 1.0, float)
+            row = self._add_param_entry(self.params_frame, row, "ACO_beta", "ACO: Beta:", 2.0, float)
+            row = self._add_param_entry(self.params_frame, row, "ACO_rho", "ACO: Rho:", 0.5, float)
+            row = self._add_param_entry(self.params_frame, row, "SA_initial_temp", "SA: Initial Temp:", 1000, int)
+            row = self._add_param_entry(self.params_frame, row, "SA_alpha", "SA: Cooling Rate (alpha):", 0.995, float)
+        elif experiment == "PSO vs HC (Rastrigin)":
+            row = self._add_param_entry(self.params_frame, row, "PSO_n_particles", "PSO: Num Particles:", 30, int)
+            row = self._add_param_entry(self.params_frame, row, "PSO_w", "PSO: Inertia (w):", 0.5, float)
+            row = self._add_param_entry(self.params_frame, row, "PSO_c1", "PSO: Cognitive (c1):", 1.5, float)
+            row = self._add_param_entry(self.params_frame, row, "PSO_c2", "PSO: Social (c2):", 1.5, float)
+            row = self._add_param_entry(self.params_frame, row, "HC_step_size", "HC: Step Size:", 0.1, float)
+            row = self._add_param_entry(self.params_frame, row, "HC_random_restart", "HC: Random Restarts:", 5, int)
+        elif experiment == "ABC vs GA (Rastrigin)":
+            row = self._add_param_entry(self.params_frame, row, "ABC_n_bees", "ABC: Num Bees:", 30, int)
+            row = self._add_param_entry(self.params_frame, row, "ABC_limit", "ABC: Limit:", 10, int)
+            row = self._add_param_entry(self.params_frame, row, "GA_pop_size", "GA: Population Size:", 50, int)
+            row = self._add_param_entry(self.params_frame, row, "GA_mutation_rate", "GA: Mutation Rate:", 0.01, float)
+            row = self._add_param_entry(self.params_frame, row, "GA_crossover_rate", "GA: Crossover Rate:", 0.8, float)
+        elif experiment == "FA vs SA (Ackley)":
+            row = self._add_param_entry(self.params_frame, row, "FA_n_fireflies", "FA: Num Fireflies:", 25, int)
+            row = self._add_param_entry(self.params_frame, row, "FA_alpha", "FA: Alpha:", 0.5, float)
+            row = self._add_param_entry(self.params_frame, row, "FA_gamma", "FA: Gamma:", 0.97, float)
+            row = self._add_param_entry(self.params_frame, row, "SA_initial_temp", "SA: Initial Temp:", 100, int)
+            row = self._add_param_entry(self.params_frame, row, "SA_alpha", "SA: Cooling Rate (alpha):", 0.99, float)
+        elif experiment == "CS vs SA (Ackley)":
+            row = self._add_param_entry(self.params_frame, row, "CS_n_nests", "CS: Num Nests:", 25, int)
+            row = self._add_param_entry(self.params_frame, row, "CS_pa", "CS: Abandon Prob (pa):", 0.25, float)
+            row = self._add_param_entry(self.params_frame, row, "SA_initial_temp", "SA: Initial Temp:", 100, int)
+            row = self._add_param_entry(self.params_frame, row, "SA_alpha", "SA: Cooling Rate (alpha):", 0.99, float)
+
     def update_status(self, message, color=("gray50", "gray50")):
         """Update status label"""
         self.status_label.configure(text=message, text_color=color)
@@ -297,40 +320,51 @@ class ComparisonTab:
         try:
             experiment = self.comparison_menu.get()
             runner = ComparisonRunner(seed=42)
-            
+
+            # Gather all parameters from the UI
+            params = {}
+            for key, (widget, type_) in self.param_entries.items():
+                value_str = widget.get()
+                if not value_str:
+                    value_str = widget.cget("placeholder_text")
+                params[key] = type_(value_str)
+
+            # Separate general params from algo-specific params
+            general_params = {k: v for k, v in params.items() if "_" not in k}
+            algo_params = {}
+            for key, value in params.items():
+                if "_" in key:
+                    algo_name, param_name = key.split("_", 1)
+                    if algo_name not in algo_params:
+                        algo_params[algo_name] = {}
+                    algo_params[algo_name][param_name] = value
+
             if "TSP" in experiment:
-                cities_str = self.n_cities_entry.get()
-                iter_str = self.max_iter_entry.get()
-                runs_str = self.n_runs_entry.get()
-                n_cities = int(cities_str) if cities_str else 20
-                max_iter = int(iter_str) if iter_str else 100
-                n_runs = int(runs_str) if runs_str else 5
-                
-                results = runner.run_tsp_comparison(n_cities, max_iter, n_runs)
+                results = runner.run_tsp_comparison(
+                    n_cities=general_params.get("n_cities", 20),
+                    max_iter=general_params.get("max_iter", 100),
+                    n_runs=general_params.get("n_runs", 10),
+                    algo_params=algo_params
+                )
             else:
-                dim_str = self.dim_entry.get()
-                iter_str = self.max_iter_entry.get()
-                runs_str = self.n_runs_entry.get()
-                dim = int(dim_str) if dim_str else 10
-                max_iter = int(iter_str) if iter_str else 100
-                n_runs = int(runs_str) if runs_str else 5
-                
-                # Determine problem and algorithms
-                if "PSO vs HC" in experiment:
-                    problem = "rastrigin"
-                    algos = ["PSO", "HC"]
-                elif "ABC vs GA" in experiment:
-                    problem = "rastrigin"
-                    algos = ["ABC", "GA"]
-                elif "FA vs SA" in experiment:
-                    problem = "ackley"
-                    algos = ["FA", "SA"]
-                elif "CS vs SA" in experiment:
-                    problem = "ackley"
-                    algos = ["CS", "SA"]
-                
+                # Determine problem and algorithms from experiment name
+                problem = "rastrigin" if "Rastrigin" in experiment else "ackley"
+                algos = []
+                if "PSO" in experiment: algos.append("PSO")
+                if "HC" in experiment: algos.append("HC")
+                if "ABC" in experiment: algos.append("ABC")
+                if "GA" in experiment: algos.append("GA")
+                if "FA" in experiment: algos.append("FA")
+                if "CS" in experiment: algos.append("CS")
+                if "SA" in experiment: algos.append("SA")
+
                 results = runner.run_continuous_comparison(
-                    problem, dim, max_iter, n_runs, algos
+                    problem=problem,
+                    dim=general_params.get("dim", 10),
+                    max_iter=general_params.get("max_iter", 100),
+                    n_runs=general_params.get("n_runs", 10),
+                    algos=algos,
+                    algo_params=algo_params
                 )
             
             self.parent.after(0, self._update_ui_with_results, results)

@@ -278,28 +278,23 @@ class ComparisonRunner:
         self.benchmark_runner = BenchmarkRunner(seed=seed, verbose=False)
         
     def run_continuous_comparison(self, problem: str, dim: int, max_iter: int,
-                                  n_runs: int, algos: List[str]) -> Dict:
+                                  n_runs: int, algos: List[str], algo_params: Dict) -> Dict:
         """Run comparison for continuous optimization"""
         problem_func, problem_info = get_problem(problem, dim)
         bounds = problem_info['bounds']
         
         # Map algorithm names to functions
-        algo_map = {
-            'PSO': (run_pso, {'n_particles': 30}),
-            'HC': (run_hill_climbing, {'step_size': 0.1, 'random_restart': 5}),
-            'ABC': (run_abc, {'n_bees': 30}),
-            'GA': (run_ga, {'pop_size': 50}),
-            'FA': (run_fa, {'n_fireflies': 25}),
-            'SA': (run_simulated_annealing, {}),
-            'CS': (run_cs, {'n_nests': 25})
+        func_map = {
+            'PSO': run_pso, 'HC': run_hill_climbing, 'ABC': run_abc, 'GA': run_ga,
+            'FA': run_fa, 'SA': run_simulated_annealing, 'CS': run_cs
         }
         
-        algorithms = {name: algo_map[name] for name in algos}
+        algorithms = {name: (func_map[name], algo_params.get(name, {})) for name in algos}
         
         # Add parameters
         algo_dict = {}
-        for algo_name, (algo_func, algo_params) in algorithms.items():
-            params = {'dim': dim, 'bounds': bounds, 'max_iter': max_iter, **algo_params}
+        for algo_name, (algo_func, user_params) in algorithms.items():
+            params = {'dim': dim, 'bounds': bounds, 'max_iter': max_iter, **user_params}
             algo_dict[algo_name] = (algo_func, params)
         
         # Run comparison
@@ -321,19 +316,19 @@ class ComparisonRunner:
             'scalability': scalability_fig
         }
     
-    def run_tsp_comparison(self, n_cities: int, max_iter: int, n_runs: int) -> Dict:
+    def run_tsp_comparison(self, n_cities: int, max_iter: int, n_runs: int, algo_params: Dict) -> Dict:
         """Run comparison for TSP"""
         tsp = create_tsp_problem(n_cities, seed=self.seed)
         cities = tsp['cities']
         distance_matrix = tsp['distance_matrix']
         
         algorithms = {
-            'ACO': (run_aco, {}),
-            'SA': (run_simulated_annealing_tsp, {})
+            'ACO': (run_aco, algo_params.get('ACO', {})),
+            'SA': (run_simulated_annealing_tsp, algo_params.get('SA', {}))
         }
         
         results = {}
-        for algo_name, (algo_func, algo_params) in algorithms.items():
+        for algo_name, (algo_func, user_params) in algorithms.items():
             fitnesses = []
             times = []
             best_result = None
@@ -341,10 +336,14 @@ class ComparisonRunner:
 
             for run in range(n_runs):
                 start = time.time()
+                
+                run_params = {'max_iter': max_iter, 'seed': self.seed + run, **user_params}
+
                 if 'distance_matrix' in algo_func.__code__.co_varnames:
-                    result = algo_func(distance_matrix, max_iter=max_iter, seed=self.seed + run, **algo_params)
-                else:
-                    result = algo_func(tsp['objective'], max_iter=max_iter, seed=self.seed + run, **algo_params)
+                    result = algo_func(distance_matrix, **run_params)
+                else: # Fallback for objectives that dont use distance matrix
+                    result = algo_func(tsp['objective'], **run_params)
+                
                 elapsed = time.time() - start
                 distance = result['best_distance']
                 fitnesses.append(distance)
@@ -546,12 +545,13 @@ class ComparisonRunner:
             
             for algo_name, (algo_func, algo_params) in algorithms.items():
                 start = time.time()
+                run_params = {**algo_params, 'max_iter': max_iter, 'seed': self.seed}
+                
                 if 'distance_matrix' in algo_func.__code__.co_varnames:
-                    result = algo_func(distance_matrix, max_iter=max_iter, 
-                                     seed=self.seed, **algo_params)
-                else:
-                    result = algo_func(tsp['objective'], max_iter=max_iter,
-                                     seed=self.seed, **algo_params)
+                    result = algo_func(distance_matrix, **run_params)
+                else: # Fallback for objectives that dont use distance matrix
+                    result = algo_func(tsp['objective'], **run_params)
+
                 elapsed = time.time() - start
                 
                 scalability_data[algo_name]['cities'].append(n_cities)
