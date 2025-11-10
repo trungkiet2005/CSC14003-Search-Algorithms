@@ -7,9 +7,6 @@ from algorithms.swarm.PSO import run_pso
 from algorithms.swarm.ABC import run_abc
 from algorithms.swarm.FA import run_fa
 from algorithms.swarm.CS import run_cs
-from algorithms.traditional.simulated_annealing import run_simulated_annealing
-from algorithms.traditional.genetic_algorithm import run_ga
-from algorithms.traditional.hill_climbing import run_hill_climbing
 
 # Import problems
 from problems.continuous import get_problem
