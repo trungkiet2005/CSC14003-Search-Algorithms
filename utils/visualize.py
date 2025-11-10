@@ -355,7 +355,8 @@ def plot_parameter_sensitivity(param_values: List,
                                std_fitness: List[float],
                                param_name: str,
                                title: str = "Parameter Sensitivity Analysis",
-                               save_path: Optional[str] = None) -> None:
+                               save_path: Optional[str] = None,
+                               ax: Optional[plt.Axes] = None) -> None:
     """
     Plot parameter sensitivity analysis
     
@@ -366,9 +367,14 @@ def plot_parameter_sensitivity(param_values: List,
         param_name: Name of the parameter
         title: Plot title
         save_path: Path to save figure
+        ax: Matplotlib axes
     """
-    fig, ax = plt.subplots(figsize=(12, 7))
-    
+    if ax is None:
+        fig, ax = plt.subplots(figsize=(12, 7))
+        show_plot = True
+    else:
+        show_plot = False
+
     # Plot mean with error bars
     ax.errorbar(param_values, mean_fitness, yerr=std_fitness,
                marker='o', markersize=8, linewidth=2,
@@ -381,11 +387,11 @@ def plot_parameter_sensitivity(param_values: List,
     ax.grid(True, alpha=0.3, linestyle='--')
     ax.legend(fontsize=11)
     
-    plt.tight_layout()
-    
-    if save_path:
-        plt.savefig(save_path, bbox_inches='tight', dpi=300)
-        print(f"Saved: {save_path}")
+    if show_plot:
+        plt.tight_layout()
+        if save_path:
+            plt.savefig(save_path, bbox_inches='tight', dpi=300)
+            print(f"Saved: {save_path}")
     
     # plt.show()
 

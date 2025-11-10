@@ -231,47 +231,6 @@ class BenchmarkRunner:
         
         return df, all_stats
 
-
-class StatisticalTests:
-    """Statistical significance tests for algorithm comparison"""
-    
-    @staticmethod
-    def wilcoxon_test(data1: np.ndarray, data2: np.ndarray) -> Tuple[float, float]:
-        """
-        Wilcoxon signed-rank test (non-parametric)
-        
-        Returns:
-            (statistic, p_value)
-        """
-        from scipy.stats import wilcoxon
-        stat, p_value = wilcoxon(data1, data2)
-        return stat, p_value
-    
-    @staticmethod
-    def mannwhitneyu_test(data1: np.ndarray, data2: np.ndarray) -> Tuple[float, float]:
-        """
-        Mann-Whitney U test (non-parametric)
-        
-        Returns:
-            (statistic, p_value)
-        """
-        from scipy.stats import mannwhitneyu
-        stat, p_value = mannwhitneyu(data1, data2, alternative='two-sided')
-        return stat, p_value
-    
-    @staticmethod
-    def friedman_test(*data_groups) -> Tuple[float, float]:
-        """
-        Friedman test for multiple related samples
-        
-        Returns:
-            (statistic, p_value)
-        """
-        from scipy.stats import friedmanchisquare
-        stat, p_value = friedmanchisquare(*data_groups)
-        return stat, p_value
-
-
 def convergence_speed_analysis(history: List[float], 
                                threshold_percentage: float = 0.99,
                                known_optimum: Optional[float] = None) -> Dict[str, Any]:

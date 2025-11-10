@@ -1,13 +1,79 @@
-"""gui/comparison_tab.py - Algorithm comparison tab"""
-
-import customtkinter
-import tkinter
+# File 3: comparison_tab_new.py - PyQt6 version
+from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, 
+                              QComboBox, QLineEdit, QScrollArea, QFrame, QTextEdit,
+                              QFileDialog)
+from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer
+from PyQt6.QtGui import QFont
 import matplotlib.pyplot as plt
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-import threading
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.lines import Line2D
 import os
+import numpy as np
+import seaborn as sns
 
 from .comparison_runner import ComparisonRunner
+from utils.visualize import (
+    plot_convergence_comparison, plot_boxplot_comparison,
+    plot_complexity_comparison, plot_scalability_comparison,
+    plot_tsp_route
+)
+
+
+class ComparisonWorker(QThread):
+    progress = pyqtSignal(str)
+    finished = pyqtSignal(object)
+    error = pyqtSignal(str)
+    cancelled = pyqtSignal()
+    
+    def __init__(self, experiment, params):
+        super().__init__()
+        self.experiment = experiment
+        self.params = params
+        self.cancel_flag = False
+        
+    def run(self):
+        try:
+            def progress_callback(msg):
+                if self.cancel_flag:
+                    raise KeyboardInterrupt("User cancelled")
+                self.progress.emit(msg)
+            
+            runner = ComparisonRunner(seed=42)
+            
+            if "TSP" in self.experiment:
+                results = runner.run_tsp_comparison(
+                    self.params['n_cities'],
+                    self.params['max_iter'],
+                    self.params['n_runs'],
+                    self.params['algo_params'],
+                    progress_callback
+                )
+            else:
+                results = runner.run_continuous_comparison(
+                    self.params['problem'],
+                    self.params['dim'],
+                    self.params['max_iter'],
+                    self.params['n_runs'],
+                    self.params['algos'],
+                    self.params['algo_params'],
+                    progress_callback
+                )
+            
+            if self.cancel_flag:
+                raise KeyboardInterrupt("User cancelled")
+            
+            self.finished.emit(results)
+            
+        except KeyboardInterrupt:
+            self.cancelled.emit()
+        except Exception as e:
+            import traceback
+            error_msg = f"Error: {str(e)}\n\n{traceback.format_exc()}"
+            print(error_msg)
+            self.error.emit(str(e))
+    
+    def cancel(self):
+        self.cancel_flag = True
 
 
 class ComparisonTab:
@@ -16,745 +82,757 @@ class ComparisonTab:
         self.is_running = False
         self.current_view = "convergence"
         self.metric_data = {}
+        self.generated_figures = {}
         self.param_entries = {}
+        self.spinner_running = False
+        self.worker = None
         
-        # Configure grid
-        parent.grid_columnconfigure(1, weight=1)
-        parent.grid_rowconfigure(0, weight=1)
+        # Setup layout
+        layout = QHBoxLayout(parent)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(12)
         
-        self._create_sidebar()
-        self._create_results_area()
+        self._create_sidebar(layout)
+        self._create_results_area(layout)
+        self.change_experiment(self.comparison_menu.currentText())
         self._init_placeholder_text()
         
-    def _create_sidebar(self):
-        """Create sidebar with controls"""
-        self.sidebar_frame = customtkinter.CTkFrame(self.parent, width=280, corner_radius=8)
-        self.sidebar_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 8), pady=0)
-        self.sidebar_frame.grid_rowconfigure(10, weight=1)
+    def _create_sidebar(self, parent_layout):
+        sidebar = QFrame()
+        sidebar.setFixedWidth(280)
+        sidebar.setStyleSheet("""
+            QFrame {
+                background-color: #2a2a2a;
+                border-radius: 12px;
+                border: 1px solid #3a3a3a;
+            }
+        """)
+        parent_layout.addWidget(sidebar)
         
-        # Title
-        title = customtkinter.CTkLabel(
-            self.sidebar_frame,
-            text="Algorithm Comparison",
-            font=customtkinter.CTkFont(size=15, weight="bold")
-        )
-        title.grid(row=0, column=0, padx=15, pady=(15, 3), sticky="w")
+        layout = QVBoxLayout(sidebar)
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(10)
         
-        subtitle = customtkinter.CTkLabel(
-            self.sidebar_frame,
-            text="Compare algorithm pairs on benchmarks",
-            font=customtkinter.CTkFont(size=10),
-            text_color=("gray60", "gray40")
-        )
-        subtitle.grid(row=1, column=0, padx=15, pady=(0, 10), sticky="w")
+        # Header
+        header = self._create_header()
+        layout.addWidget(header)
         
-        # Separator
-        sep1 = customtkinter.CTkFrame(self.sidebar_frame, height=1, fg_color=("gray70", "gray30"))
-        sep1.grid(row=2, column=0, padx=15, pady=8, sticky="ew")
+        # Experiment selection
+        exp_label = QLabel("Experiment Group")
+        exp_label.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
+        exp_label.setStyleSheet("color: white;")
+        layout.addWidget(exp_label)
         
-        # Comparison selection
-        comp_label = customtkinter.CTkLabel(
-            self.sidebar_frame,
-            text="Select Comparison",
-            font=customtkinter.CTkFont(size=12, weight="bold")
-        )
-        comp_label.grid(row=3, column=0, padx=15, pady=(5, 3), sticky="w")
+        self.comparison_menu = QComboBox()
+        self.comparison_menu.addItems([
+            "ACO vs SA (TSP)",
+            "PSO vs HC (Rastrigin)",
+            "ABC vs GA (Rastrigin)",
+            "FA vs SA (Ackley)",
+            "CS vs SA (Ackley)"
+        ])
+        self.comparison_menu.currentTextChanged.connect(self.change_experiment)
+        self._style_combobox(self.comparison_menu)
+        layout.addWidget(self.comparison_menu)
         
-        self.comparison_menu = customtkinter.CTkOptionMenu(
-            self.sidebar_frame,
-            values=[
-                "ACO vs SA (TSP)",
-                "PSO vs HC (Rastrigin)",
-                "ABC vs GA (Rastrigin)",
-                "FA vs SA (Ackley)",
-                "CS vs SA (Ackley)"
-            ],
-            command=self.change_experiment,
-            width=250,
-            height=32,
-            font=customtkinter.CTkFont(size=11)
-        )
-        self.comparison_menu.grid(row=4, column=0, padx=15, pady=(0, 10))
+        # Parameters
+        params_label = QLabel("Configuration")
+        params_label.setFont(QFont("Segoe UI", 12, QFont.Weight.Bold))
+        params_label.setStyleSheet("color: white; margin-top: 10px;")
+        layout.addWidget(params_label)
         
-        # Scrollable parameters frame
-        params_label = customtkinter.CTkLabel(
-            self.sidebar_frame,
-            text="Parameters",
-            font=customtkinter.CTkFont(size=12, weight="bold")
-        )
-        params_label.grid(row=5, column=0, padx=15, pady=(5, 8), sticky="w")
+        # Scrollable parameters area
+        self.params_scroll = QScrollArea()
+        self.params_scroll.setWidgetResizable(True)
+        self.params_scroll.setStyleSheet("""
+            QScrollArea {
+                background-color: transparent;
+                border: none;
+            }
+            QScrollBar:vertical {
+                background-color: #2a2a2a;
+                width: 12px;
+            }
+            QScrollBar::handle:vertical {
+                background-color: #00A86B;
+                border-radius: 6px;
+            }
+        """)
         
-        self.params_scroll = customtkinter.CTkScrollableFrame(
-            self.sidebar_frame, 
-            height=300,
-            fg_color="transparent"
-        )
-        self.params_scroll.grid(row=6, column=0, padx=15, pady=(0, 10), sticky="ew")
+        self.scroll_widget = QWidget()
+        self.scroll_widget.setStyleSheet("background-color: #1e1e1e;")
+        self.scroll_layout = QVBoxLayout(self.scroll_widget)
+        self.scroll_layout.setSpacing(8)
+        self.params_scroll.setWidget(self.scroll_widget)
         
-        # Separator
-        sep2 = customtkinter.CTkFrame(self.sidebar_frame, height=1, fg_color=("gray70", "gray30"))
-        sep2.grid(row=7, column=0, padx=15, pady=10, sticky="ew")
+        layout.addWidget(self.params_scroll)
         
-        # Run button
-        self.run_button = customtkinter.CTkButton(
-            self.sidebar_frame,
-            text="▶ Run Comparison",
-            command=self.run_experiment,
-            width=250,
-            height=36,
-            font=customtkinter.CTkFont(size=13, weight="bold"),
-            fg_color=("#2CC985", "#2FA572"),
-            hover_color=("#28B574", "#298F64")
-        )
-        self.run_button.grid(row=8, column=0, padx=15, pady=8)
+        # Action buttons
+        self.run_button = QPushButton("▶ Run Benchmark")
+        self.run_button.clicked.connect(self.run_experiment)
+        self._style_button(self.run_button, "#00A86B", "#00D9A5")
+        layout.addWidget(self.run_button)
         
-        # Save button
-        self.save_button = customtkinter.CTkButton(
-            self.sidebar_frame,
-            text="💾 Save Figure",
-            command=self.save_figure,
-            width=250,
-            height=32,
-            font=customtkinter.CTkFont(size=11),
-            state="disabled"
-        )
-        self.save_button.grid(row=9, column=0, padx=15, pady=(0, 8))
+        self.cancel_button = QPushButton("⏹ Cancel Benchmark")
+        self.cancel_button.clicked.connect(self.cancel_experiment)
+        self._style_button(self.cancel_button, "#FF6B6B", "#FF4D4D")
+        self.cancel_button.hide()
+        layout.addWidget(self.cancel_button)
+        
+        self.save_button = QPushButton("💾 Export Chart")
+        self.save_button.clicked.connect(self.save_figure)
+        self._style_button(self.save_button, "#555555", "#666666")
+        self.save_button.setEnabled(False)
+        layout.addWidget(self.save_button)
+        
+        # Progress indicator
+        self.progress_frame = QFrame()
+        self.progress_frame.setStyleSheet("""
+            QFrame {
+                background-color: #3a3a3a;
+                border-radius: 8px;
+                border: 1px solid #4a4a4a;
+            }
+        """)
+        progress_layout = QHBoxLayout(self.progress_frame)
+        
+        self.spinner_label = QLabel("⏳")
+        self.spinner_label.setFont(QFont("Segoe UI", 18))
+        progress_layout.addWidget(self.spinner_label)
+        
+        self.progress_message = QLabel("")
+        self.progress_message.setFont(QFont("Segoe UI", 10))
+        self.progress_message.setStyleSheet("color: #aaaaaa;")
+        self.progress_message.setWordWrap(True)
+        progress_layout.addWidget(self.progress_message, 1)
+        
+        self.progress_frame.hide()
+        layout.addWidget(self.progress_frame)
         
         # Status
-        self.status_label = customtkinter.CTkLabel(
-            self.sidebar_frame,
-            text="Ready",
-            font=customtkinter.CTkFont(size=10),
-            text_color=("gray50", "gray50")
-        )
-        self.status_label.grid(row=11, column=0, padx=15, pady=(8, 15), sticky="s")
+        self.status_label = QLabel("● Ready")
+        self.status_label.setFont(QFont("Segoe UI", 11))
+        self.status_label.setStyleSheet("color: #aaaaaa; padding: 10px;")
+        layout.addWidget(self.status_label)
         
-        # Set default
-        self.change_experiment(self.comparison_menu.get())
+    def _create_header(self):
+        header = QFrame()
+        header.setStyleSheet("""
+            QFrame {
+                background-color: #3a3a3a;
+                border-radius: 8px;
+            }
+        """)
+        layout = QVBoxLayout(header)
         
-    def _create_results_area(self):
-        """Create results display area"""
-        self.results_frame = customtkinter.CTkFrame(self.parent, corner_radius=8)
-        self.results_frame.grid(row=0, column=1, padx=(8, 0), pady=0, sticky="nsew")
-        self.results_frame.grid_rowconfigure(2, weight=1)
-        self.results_frame.grid_columnconfigure(0, weight=1)
+        title = QLabel("Algorithm Comparison")
+        title.setFont(QFont("Segoe UI", 16, QFont.Weight.Bold))
+        title.setStyleSheet("color: white;")
+        layout.addWidget(title)
         
-        # Title
-        title = customtkinter.CTkLabel(
-            self.results_frame,
-            text="📈 Comparison Results",
-            font=customtkinter.CTkFont(size=15, weight="bold")
-        )
-        title.grid(row=0, column=0, padx=15, pady=(15, 8), sticky="w")
+        subtitle = QLabel("Head-to-head performance analysis")
+        subtitle.setFont(QFont("Segoe UI", 10))
+        subtitle.setStyleSheet("color: #aaaaaa;")
+        layout.addWidget(subtitle)
+        
+        return header
+        
+    def _style_combobox(self, combo):
+        combo.setStyleSheet("""
+            QComboBox {
+                background-color: #3a3a3a;
+                color: white;
+                border: 1px solid #4a4a4a;
+                border-radius: 6px;
+                padding: 8px;
+                font-size: 11px;
+            }
+            QComboBox::drop-down {
+                border: none;
+            }
+            QComboBox QAbstractItemView {
+                background-color: #3a3a3a;
+                color: white;
+                selection-background-color: #00A86B;
+            }
+        """)
+        
+    def _style_lineedit(self, edit):
+        edit.setStyleSheet("""
+            QLineEdit {
+                background-color: #3a3a3a;
+                color: white;
+                border: 1px solid #4a4a4a;
+                border-radius: 4px;
+                padding: 6px;
+                font-size: 11px;
+            }
+            QLineEdit:focus {
+                border: 1px solid #00A86B;
+            }
+        """)
+        
+    def _style_button(self, button, bg_color, hover_color):
+        button.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {bg_color};
+                color: white;
+                border: none;
+                border-radius: 6px;
+                padding: 10px;
+                font-size: 12px;
+                font-weight: bold;
+            }}
+            QPushButton:hover {{
+                background-color: {hover_color};
+            }}
+            QPushButton:disabled {{
+                background-color: #555555;
+                color: #888888;
+            }}
+        """)
+        
+    def _add_section_label(self, text):
+        section = QLabel(text)
+        section.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
+        section.setStyleSheet("color: #00D9A5; margin-top: 10px;")
+        self.scroll_layout.addWidget(section)
+        
+    def _add_section_separator(self):
+        sep = QFrame()
+        sep.setFrameShape(QFrame.Shape.HLine)
+        sep.setStyleSheet("background-color: #4a4a4a; max-height: 1px; margin: 6px 5px;")
+        self.scroll_layout.addWidget(sep)
+        
+    def _add_param_entry(self, key, label, default):
+        label_widget = QLabel(f"{label}:")
+        label_widget.setFont(QFont("Segoe UI", 10))
+        label_widget.setStyleSheet("color: white;")
+        self.scroll_layout.addWidget(label_widget)
+        
+        entry = QLineEdit()
+        entry.setPlaceholderText(default)
+        entry.setText(default)
+        self._style_lineedit(entry)
+        self.scroll_layout.addWidget(entry)
+        
+        self.param_entries[key] = entry
+        
+    def change_experiment(self, experiment):
+        # Clear existing widgets
+        while self.scroll_layout.count():
+            child = self.scroll_layout.takeAt(0)
+            if child.widget():
+                child.widget().deleteLater()
+        
+        self.param_entries = {}
+        
+        if "TSP" in experiment:
+            self._add_section_label("General Settings")
+            self._add_param_entry("n_cities", "Number of Cities", "20")
+            self._add_param_entry("max_iter", "Maximum Iterations", "100")
+            self._add_param_entry("n_runs", "Benchmark Runs", "5")
+            
+            self._add_section_separator()
+            self._add_section_label("Ant Colony Optimization")
+            self._add_param_entry("ACO_n_ants", "Ant Population", "20")
+            self._add_param_entry("ACO_alpha", "Pheromone Weight (α)", "1.0")
+            self._add_param_entry("ACO_beta", "Heuristic Weight (β)", "2.0")
+            self._add_param_entry("ACO_rho", "Evaporation Rate (ρ)", "0.1")
+            
+            self._add_section_separator()
+            self._add_section_label("Simulated Annealing")
+            self._add_param_entry("SA_initial_temp", "Initial Temperature", "1000")
+            self._add_param_entry("SA_final_temp", "Final Temperature", "0.001")
+            self._add_param_entry("SA_alpha", "Cooling Factor (α)", "0.995")
+        else:
+            self._add_section_label("General Settings")
+            self._add_param_entry("dim", "Problem Dimensions", "10")
+            self._add_param_entry("max_iter", "Maximum Iterations", "100")
+            self._add_param_entry("n_runs", "Benchmark Runs", "5")
+            
+            self._add_section_separator()
+            
+            if "PSO vs HC" in experiment:
+                self._add_section_label("Particle Swarm Optimization")
+                self._add_param_entry("PSO_n_particles", "Swarm Size", "30")
+                self._add_param_entry("PSO_w", "Inertia Weight", "0.7298")
+                self._add_param_entry("PSO_c1", "Cognitive (c₁)", "1.49618")
+                self._add_param_entry("PSO_c2", "Social (c₂)", "1.49618")
+                
+                self._add_section_separator()
+                self._add_section_label("Hill Climbing")
+                self._add_param_entry("HC_step_size", "Step Size", "0.1")
+            elif "ABC vs GA" in experiment:
+                self._add_section_label("Artificial Bee Colony")
+                self._add_param_entry("ABC_n_bees", "Colony Size", "30")
+                self._add_param_entry("ABC_limit", "Scout Limit", "auto")
+                
+                self._add_section_separator()
+                self._add_section_label("Genetic Algorithm")
+                self._add_param_entry("GA_pop_size", "Population Size", "50")
+                self._add_param_entry("GA_crossover_rate", "Crossover Rate", "0.8")
+                self._add_param_entry("GA_mutation_rate", "Mutation Rate", "0.1")
+            elif "FA vs SA" in experiment:
+                self._add_section_label("Firefly Algorithm")
+                self._add_param_entry("FA_n_fireflies", "Firefly Population", "25")
+                self._add_param_entry("FA_alpha", "Randomness (α)", "0.5")
+                self._add_param_entry("FA_beta0", "Attractiveness (β₀)", "1.0")
+                self._add_param_entry("FA_gamma", "Absorption (γ)", "1.0")
+                
+                self._add_section_separator()
+                self._add_section_label("Simulated Annealing")
+                self._add_param_entry("SA_initial_temp", "Initial Temperature", "1000")
+                self._add_param_entry("SA_alpha", "Cooling Factor (α)", "0.98")
+            elif "CS vs SA" in experiment:
+                self._add_section_label("Cuckoo Search")
+                self._add_param_entry("CS_n_nests", "Host Nests", "25")
+                self._add_param_entry("CS_pa", "Discovery Rate (pₐ)", "0.25")
+                
+                self._add_section_separator()
+                self._add_section_label("Simulated Annealing")
+                self._add_param_entry("SA_initial_temp", "Initial Temperature", "1000")
+                self._add_param_entry("SA_alpha", "Cooling Factor (α)", "0.98")
+        
+        self.scroll_layout.addStretch()
+        
+    def _create_results_area(self, parent_layout):
+        results = QFrame()
+        results.setStyleSheet("""
+            QFrame {
+                background-color: #2a2a2a;
+                border-radius: 12px;
+                border: 1px solid #3a3a3a;
+            }
+        """)
+        parent_layout.addWidget(results, 1)
+        
+        layout = QVBoxLayout(results)
+        layout.setContentsMargins(12, 12, 12, 12)
+        
+        # Header
+        header = QLabel("Comparative Analysis Dashboard")
+        header.setFont(QFont("Segoe UI", 16, QFont.Weight.Bold))
+        header.setStyleSheet("color: white;")
+        layout.addWidget(header)
         
         # Metric buttons
-        self.metrics_button_frame = customtkinter.CTkFrame(self.results_frame, fg_color="transparent")
-        self.metrics_button_frame.grid(row=1, column=0, padx=15, pady=(0, 8), sticky="ew")
-        self.metrics_button_frame.grid_columnconfigure((0, 1, 2, 3), weight=1)
+        buttons_frame = QFrame()
+        buttons_frame.setStyleSheet("background-color: #3a3a3a; border-radius: 8px;")
+        buttons_layout = QHBoxLayout(buttons_frame)
         
-        self.convergence_btn = customtkinter.CTkButton(
-            self.metrics_button_frame, text="Convergence",
-            command=lambda: self.show_metric_view("convergence"),
-            height=32,
-            font=customtkinter.CTkFont(size=11)
-        )
-        self.convergence_btn.grid(row=0, column=0, padx=(0, 4), sticky="ew")
+        self.convergence_btn = QPushButton("Convergence Speed")
+        self.complexity_btn = QPushButton("Complexity")
+        self.robustness_btn = QPushButton("Robustness")
+        self.scalability_btn = QPushButton("Scalability")
         
-        self.complexity_btn = customtkinter.CTkButton(
-            self.metrics_button_frame, text="Complexity",
-            command=lambda: self.show_metric_view("complexity"),
-            height=32,
-            font=customtkinter.CTkFont(size=11)
-        )
-        self.complexity_btn.grid(row=0, column=1, padx=4, sticky="ew")
+        for btn in [self.convergence_btn, self.complexity_btn, self.robustness_btn, self.scalability_btn]:
+            self._style_metric_button(btn)
+            buttons_layout.addWidget(btn)
+            
+        self.convergence_btn.clicked.connect(lambda: self.show_metric_view("convergence"))
+        self.complexity_btn.clicked.connect(lambda: self.show_metric_view("complexity"))
+        self.robustness_btn.clicked.connect(lambda: self.show_metric_view("robustness"))
+        self.scalability_btn.clicked.connect(lambda: self.show_metric_view("scalability"))
         
-        self.robustness_btn = customtkinter.CTkButton(
-            self.metrics_button_frame, text="Robustness",
-            command=lambda: self.show_metric_view("robustness"),
-            height=32,
-            font=customtkinter.CTkFont(size=11)
-        )
-        self.robustness_btn.grid(row=0, column=2, padx=4, sticky="ew")
+        layout.addWidget(buttons_frame)
         
-        self.scalability_btn = customtkinter.CTkButton(
-            self.metrics_button_frame, text="Scalability",
-            command=lambda: self.show_metric_view("scalability"),
-            height=32,
-            font=customtkinter.CTkFont(size=11)
-        )
-        self.scalability_btn.grid(row=0, column=3, padx=(4, 0), sticky="ew")
+        # Content area
+        self.metric_content_frame = QFrame()
+        self.metric_content_frame.setStyleSheet("""
+            QFrame {
+                background-color: #1a1a1a;
+                border-radius: 8px;
+                border: 1px solid #3a3a3a;
+            }
+        """)
+        layout.addWidget(self.metric_content_frame, 1)
         
-        # Content frame
-        self.metric_content_frame = customtkinter.CTkFrame(self.results_frame)
-        self.metric_content_frame.grid(row=2, column=0, padx=15, pady=(0, 15), sticky="nsew")
-        self.metric_content_frame.grid_rowconfigure(0, weight=1)
-        self.metric_content_frame.grid_columnconfigure(0, weight=1)
+        self.metric_display_layout = QVBoxLayout(self.metric_content_frame)
         
-        # Display frame
-        self.metric_display = customtkinter.CTkFrame(self.metric_content_frame, fg_color="transparent")
-        self.metric_display.grid(row=0, column=0, sticky="nsew")
-        self.metric_display.grid_rowconfigure(0, weight=1)
-        self.metric_display.grid_columnconfigure(0, weight=1)
+    def _style_metric_button(self, button):
+        button.setStyleSheet("""
+            QPushButton {
+                background-color: transparent;
+                color: #888888;
+                border: none;
+                border-radius: 6px;
+                padding: 10px;
+                font-size: 11px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #4a4a4a;
+                color: white;
+            }
+        """)
         
     def _init_placeholder_text(self):
-        """Initialize placeholder text"""
-        placeholder = "Run a comparison to see\ndetailed performance metrics."
-        self.metric_data = {
-            'convergence': placeholder,
-            'complexity': placeholder,
-            'robustness': placeholder,
-            'scalability': placeholder
-        }
+        placeholder = "Select an experiment and click 'Run Benchmark' to start analysis."
+        for view in ["convergence", "complexity", "robustness", "scalability"]:
+            self.metric_data[view] = placeholder
         self.show_metric_view(self.current_view)
         
-    def show_metric_view(self, view_name: str):
-        """Display the selected metric view"""
+    def show_metric_view(self, view_name):
         self.current_view = view_name
         
-        # Clear previous content
-        for widget in self.metric_display.winfo_children():
-            widget.destroy()
+        # Clear existing widgets
+        while self.metric_display_layout.count():
+            child = self.metric_display_layout.takeAt(0)
+            if child.widget():
+                child.widget().deleteLater()
         
-        # Highlight button
-        buttons = {
+        # Update button styles
+        for btn in [self.convergence_btn, self.complexity_btn, self.robustness_btn, self.scalability_btn]:
+            self._style_metric_button(btn)
+            
+        # Highlight active button
+        button_map = {
             "convergence": self.convergence_btn,
             "complexity": self.complexity_btn,
             "robustness": self.robustness_btn,
             "scalability": self.scalability_btn
         }
-        for name, btn in buttons.items():
-            if name == view_name:
-                btn.configure(fg_color=customtkinter.ThemeManager.theme["CTkButton"]["hover_color"])
-            else:
-                btn.configure(fg_color=customtkinter.ThemeManager.theme["CTkButton"]["fg_color"])
+        if view_name in button_map:
+            button_map[view_name].setStyleSheet("""
+                QPushButton {
+                    background-color: #00A86B;
+                    color: white;
+                    border: none;
+                    border-radius: 6px;
+                    padding: 10px;
+                    font-size: 11px;
+                    font-weight: bold;
+                }
+            """)
         
-        # Get data
-        data = self.metric_data.get(view_name)
+        # Display content
+        # Always regenerate the figure to avoid rendering issues with reused figure objects.
+        fig = None
+        data = self.metric_data
         
-        if isinstance(data, plt.Figure):
-            canvas = FigureCanvasTkAgg(data, master=self.metric_display)
-            canvas.draw()
-            canvas.get_tk_widget().pack(side=tkinter.TOP, fill=tkinter.BOTH, expand=1)
+        # Check if we have actual results data to plot
+        if isinstance(data.get('metadata'), dict):
+            plot_map = {
+                "convergence": self._plot_convergence,
+                "complexity": self._plot_complexity,
+                "robustness": self._plot_robustness,
+                "scalability": self._plot_scalability,
+            }
+            if view_name in plot_map:
+                # Generate a new figure
+                fig = plot_map[view_name](data)
+        
+        # If a figure was successfully generated, display it
+        if fig:
+            # Close the old figure for this view if it exists, to prevent memory leaks
+            if view_name in self.generated_figures:
+                plt.close(self.generated_figures[view_name])
+            
+            # Store the new figure and display it in a new canvas
+            self.generated_figures[view_name] = fig
+            canvas = FigureCanvas(fig)
+            self.metric_display_layout.addWidget(canvas)
         else:
-            textbox = customtkinter.CTkTextbox(
-                self.metric_display,
-                font=customtkinter.CTkFont(size=10, family="Courier"),
-                wrap="word"
-            )
-            textbox.pack(fill="both", expand=True, padx=4, pady=4)
-            textbox.insert("0.0", str(data))
-            textbox.configure(state="disabled")
+            # If no figure was generated (e.g., no data yet), show a placeholder text
+            placeholder = self.metric_data.get(view_name, "No data available.")
+            textbox = QTextEdit()
+            textbox.setReadOnly(True)
+            textbox.setText(str(placeholder))
+            textbox.setStyleSheet("""
+                QTextEdit {
+                    background-color: #3a3a3a;
+                    color: white;
+                    border: 1px solid #4a4a4a;
+                    border-radius: 4px;
+                    padding: 10px;
+                    font-family: Consolas;
+                    font-size: 10px;
+                }
+            """)
+            self.metric_display_layout.addWidget(textbox)
             
-    def change_experiment(self, experiment: str):
-        """Update parameter inputs based on selected experiment"""
-        # Clear old widgets
-        for widget in self.params_scroll.winfo_children():
-            widget.destroy()
+    def _plot_convergence(self, data):
+        is_tsp = "main_results" in data
+        if is_tsp:
+            fig, axes = plt.subplots(1, len(data['main_results']), figsize=(7 * len(data['main_results']), 6), squeeze=False)
+            axes = axes.flatten()
+            for ax, (algo_name, res) in zip(axes, data['main_results'].items()):
+                plot_tsp_route(data['metadata']['cities'], res['best_route'], res['best_distance'], 
+                             title=f"{algo_name}\nDistance: {res['best_distance']:.2f}", ax=ax)
+        else:
+            fig, ax = plt.subplots(figsize=(12, 7))
+            histories = {s.algorithm_name: s.results[0]['history'] for s in data['stats_list'] 
+                        if s.results and 'history' in s.results[0]}
+            plot_convergence_comparison(histories, 
+                                      title=f"Convergence: {data['metadata']['problem'].capitalize()} (dim={data['metadata']['dim']})", 
+                                      ax=ax, log_scale=True)
+        plt.tight_layout()
+        return fig
+
+    def _plot_complexity(self, data):
+        is_tsp = "main_results" in data
+        if is_tsp:
+            fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6))
+            fig.suptitle("TSP Computational Complexity", fontsize=16, fontweight='bold')
+            
+            results = data['main_results']
+            algo_names = list(results.keys())
+            mean_times = [r['mean_time'] for r in results.values()]
+            mean_distances = [r['mean_distance'] for r in results.values()]
+            colors = sns.color_palette("viridis", len(algo_names))
+            
+            ax1.bar(algo_names, mean_times, color=colors, alpha=0.8)
+            ax1.set_title("Mean Execution Time", fontsize=14)
+            ax1.set_ylabel("Time (seconds)", fontsize=12)
+            
+            ax2.bar(algo_names, mean_distances, color=colors, alpha=0.8)
+            ax2.set_title("Mean Solution Quality", fontsize=14)
+            ax2.set_ylabel("Tour Distance", fontsize=12)
+            
+            for ax in [ax1, ax2]:
+                plt.setp(ax.xaxis.get_majorticklabels(), rotation=45, ha='right')
+                ax.grid(True, axis='y', linestyle='--', alpha=0.6)
+        else:
+            fig = plot_complexity_comparison(data['stats_list'], 
+                                           title=f"Complexity: {data['metadata']['problem'].capitalize()} (dim={data['metadata']['dim']})")
+        plt.tight_layout()
+        return fig
+
+    def _plot_robustness(self, data):
+        is_tsp = "main_results" in data
+        fig, ax = plt.subplots(figsize=(12, 7))
         
-        self.param_entries = {}
-        row_idx = 0
+        if is_tsp:
+            results = data['main_results']
+            n_runs = self.param_entries["n_runs"].text()
+            if int(n_runs or 0) < 2:
+                ax.text(0.5, 0.5, 'Increase "Benchmark Runs" to 2 or more\nto see TSP robustness analysis.', 
+                       ha='center', va='center', fontsize=14)
+                return fig
+                
+            boxplot_data = {name: res['all_distances'] for name, res in results.items()}
+            ax.set_title("TSP Robustness - Distance Distribution", fontsize=16, fontweight='bold')
+            ax.set_ylabel("Tour Distance", fontsize=13)
+            
+            bp = ax.boxplot(boxplot_data.values(), tick_labels=boxplot_data.keys(), 
+                          patch_artist=True, showmeans=True, meanline=True)
+            colors = sns.color_palette("Set3", len(boxplot_data))
+            for patch, c in zip(bp['boxes'], colors):
+                patch.set_facecolor(c)
+                
+            ax.legend([Line2D([0], [0], color='red', lw=2), Line2D([0], [0], color='blue', lw=2, ls='--')], 
+                     ['Median', 'Mean'])
+        else:
+            boxplot_data = {s.algorithm_name: s.all_fitnesses for s in data['stats_list']}
+            plot_boxplot_comparison(boxplot_data, 
+                                  title=f"Robustness: {data['metadata']['problem'].capitalize()} (dim={data['metadata']['dim']})", 
+                                  ax=ax)
+        plt.tight_layout()
+        return fig
+
+    def _plot_scalability(self, data):
+        is_tsp = "main_results" in data
         
-        if "TSP" in experiment:
-            # TSP Common parameters
-            self._add_param_entry("n_cities", "Number of Cities", "20", row_idx)
-            row_idx += 2
-            self._add_param_entry("max_iter", "Max Iterations", "100", row_idx)
-            row_idx += 2
-            self._add_param_entry("n_runs", "Number of Runs", "1", row_idx)
-            row_idx += 2
+        if is_tsp:
+            fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(18, 7))
+            fig.suptitle("TSP Scalability Analysis", fontsize=18, fontweight='bold')
             
-            # Add separator
-            sep = customtkinter.CTkFrame(self.params_scroll, height=2, fg_color=("gray70", "gray30"))
-            sep.grid(row=row_idx, column=0, columnspan=2, padx=0, pady=10, sticky="ew")
-            row_idx += 1
+            scal_data = data['scalability_data']
+            colors = sns.color_palette("husl", len(scal_data))
             
-            # ACO parameters
-            aco_label = customtkinter.CTkLabel(
-                self.params_scroll, 
-                text="ACO Parameters",
-                font=customtkinter.CTkFont(size=11, weight="bold")
-            )
-            aco_label.grid(row=row_idx, column=0, columnspan=2, padx=0, pady=(5, 8), sticky="w")
-            row_idx += 1
+            for (name, s_data), color in zip(scal_data.items(), colors):
+                ax1.plot(s_data['cities'], s_data['distances'], marker='o', linestyle='-', color=color, label=name)
+                ax2.plot(s_data['cities'], s_data['times'], marker='o', linestyle='-', color=color, label=name)
             
-            self._add_param_entry("ACO_n_ants", "Number of Ants", "20", row_idx)
-            row_idx += 2
-            self._add_param_entry("ACO_alpha", "Alpha (pheromone)", "1.0", row_idx)
-            row_idx += 2
-            self._add_param_entry("ACO_beta", "Beta (heuristic)", "2.0", row_idx)
-            row_idx += 2
-            self._add_param_entry("ACO_rho", "Rho (evaporation)", "0.1", row_idx)
-            row_idx += 2
-            self._add_param_entry("ACO_phi", "Phi (local update)", "0.1", row_idx)
-            row_idx += 2
-            self._add_param_entry("ACO_q0", "Q0 (exploitation)", "0.9", row_idx)
-            row_idx += 2
+            ax1.set_title("Solution Quality vs. Problem Size")
+            ax1.set_xlabel("Number of Cities")
+            ax1.set_ylabel("Tour Distance")
             
-            # Add separator
-            sep = customtkinter.CTkFrame(self.params_scroll, height=2, fg_color=("gray70", "gray30"))
-            sep.grid(row=row_idx, column=0, columnspan=2, padx=0, pady=10, sticky="ew")
-            row_idx += 1
+            ax2.set_title("Execution Time vs. Problem Size")
+            ax2.set_xlabel("Number of Cities")
+            ax2.set_ylabel("Time (seconds)")
             
-            # SA parameters
-            sa_label = customtkinter.CTkLabel(
-                self.params_scroll, 
-                text="SA Parameters",
-                font=customtkinter.CTkFont(size=11, weight="bold")
-            )
-            sa_label.grid(row=row_idx, column=0, columnspan=2, padx=0, pady=(5, 8), sticky="w")
-            row_idx += 1
-            
-            self._add_param_entry("SA_initial_temp", "Initial Temperature", "1000", row_idx)
-            row_idx += 2
-            self._add_param_entry("SA_final_temp", "Final Temperature", "0.001", row_idx)
-            row_idx += 2
-            self._add_param_entry("SA_alpha", "Alpha (cooling)", "0.995", row_idx)
-            row_idx += 2
-            self._add_param_entry("SA_cooling_schedule", "Cooling Schedule", "exponential", row_idx)
-            row_idx += 2
-            self._add_param_entry("SA_patience", "Patience", "2000", row_idx)
-            row_idx += 2
-            
-        elif "PSO vs HC" in experiment:
-            # Common parameters
-            self._add_param_entry("dim", "Dimensions", "10", row_idx)
-            row_idx += 2
-            self._add_param_entry("max_iter", "Max Iterations", "100", row_idx)
-            row_idx += 2
-            self._add_param_entry("n_runs", "Number of Runs", "5", row_idx)
-            row_idx += 2
-            
-            # Add separator
-            sep = customtkinter.CTkFrame(self.params_scroll, height=2, fg_color=("gray70", "gray30"))
-            sep.grid(row=row_idx, column=0, columnspan=2, padx=0, pady=10, sticky="ew")
-            row_idx += 1
-            
-            # PSO parameters
-            pso_label = customtkinter.CTkLabel(
-                self.params_scroll, 
-                text="PSO Parameters",
-                font=customtkinter.CTkFont(size=11, weight="bold")
-            )
-            pso_label.grid(row=row_idx, column=0, columnspan=2, padx=0, pady=(5, 8), sticky="w")
-            row_idx += 1
-            
-            self._add_param_entry("PSO_n_particles", "Number of Particles", "30", row_idx)
-            row_idx += 2
-            self._add_param_entry("PSO_w", "Inertia Weight", "0.7298", row_idx)
-            row_idx += 2
-            self._add_param_entry("PSO_c1", "Cognitive (c1)", "1.49618", row_idx)
-            row_idx += 2
-            self._add_param_entry("PSO_c2", "Social (c2)", "1.49618", row_idx)
-            row_idx += 2
-            self._add_param_entry("PSO_w_min", "Min Inertia", "0.4", row_idx)
-            row_idx += 2
-            self._add_param_entry("PSO_w_max", "Max Inertia", "0.9", row_idx)
-            row_idx += 2
-            self._add_param_entry("PSO_v_max_ratio", "Max Velocity Ratio", "0.2", row_idx)
-            row_idx += 2
-            
-            # Add separator
-            sep = customtkinter.CTkFrame(self.params_scroll, height=2, fg_color=("gray70", "gray30"))
-            sep.grid(row=row_idx, column=0, columnspan=2, padx=0, pady=10, sticky="ew")
-            row_idx += 1
-            
-            # HC parameters
-            hc_label = customtkinter.CTkLabel(
-                self.params_scroll, 
-                text="Hill Climbing Parameters",
-                font=customtkinter.CTkFont(size=11, weight="bold")
-            )
-            hc_label.grid(row=row_idx, column=0, columnspan=2, padx=0, pady=(5, 8), sticky="w")
-            row_idx += 1
-            
-            self._add_param_entry("HC_step_size", "Step Size", "0.1", row_idx)
-            row_idx += 2
-            self._add_param_entry("HC_random_restart", "Random Restarts", "5", row_idx)
-            row_idx += 2
-            
-        elif "ABC vs GA" in experiment:
-            # Common parameters
-            self._add_param_entry("dim", "Dimensions", "10", row_idx)
-            row_idx += 2
-            self._add_param_entry("max_iter", "Max Iterations", "100", row_idx)
-            row_idx += 2
-            self._add_param_entry("n_runs", "Number of Runs", "5", row_idx)
-            row_idx += 2
-            
-            # Add separator
-            sep = customtkinter.CTkFrame(self.params_scroll, height=2, fg_color=("gray70", "gray30"))
-            sep.grid(row=row_idx, column=0, columnspan=2, padx=0, pady=10, sticky="ew")
-            row_idx += 1
-            
-            # ABC parameters
-            abc_label = customtkinter.CTkLabel(
-                self.params_scroll, 
-                text="ABC Parameters",
-                font=customtkinter.CTkFont(size=11, weight="bold")
-            )
-            abc_label.grid(row=row_idx, column=0, columnspan=2, padx=0, pady=(5, 8), sticky="w")
-            row_idx += 1
-            
-            self._add_param_entry("ABC_n_bees", "Number of Bees", "30", row_idx)
-            row_idx += 2
-            self._add_param_entry("ABC_limit", "Abandonment Limit", "auto", row_idx)
-            row_idx += 2
-            self._add_param_entry("ABC_modification_rate", "Modification Rate", "1.0", row_idx)
-            row_idx += 2
-            
-            # Add separator
-            sep = customtkinter.CTkFrame(self.params_scroll, height=2, fg_color=("gray70", "gray30"))
-            sep.grid(row=row_idx, column=0, columnspan=2, padx=0, pady=10, sticky="ew")
-            row_idx += 1
-            
-            # GA parameters
-            ga_label = customtkinter.CTkLabel(
-                self.params_scroll, 
-                text="Genetic Algorithm Parameters",
-                font=customtkinter.CTkFont(size=11, weight="bold")
-            )
-            ga_label.grid(row=row_idx, column=0, columnspan=2, padx=0, pady=(5, 8), sticky="w")
-            row_idx += 1
-            
-            self._add_param_entry("GA_pop_size", "Population Size", "50", row_idx)
-            row_idx += 2
-            self._add_param_entry("GA_crossover_rate", "Crossover Rate", "0.8", row_idx)
-            row_idx += 2
-            self._add_param_entry("GA_mutation_rate", "Mutation Rate", "0.1", row_idx)
-            row_idx += 2
-            self._add_param_entry("GA_tournament_size", "Tournament Size", "3", row_idx)
-            row_idx += 2
-            self._add_param_entry("GA_elitism_ratio", "Elitism Ratio", "0.1", row_idx)
-            row_idx += 2
-            
-        elif "FA vs SA" in experiment:
-            # Common parameters
-            self._add_param_entry("dim", "Dimensions", "10", row_idx)
-            row_idx += 2
-            self._add_param_entry("max_iter", "Max Iterations", "100", row_idx)
-            row_idx += 2
-            self._add_param_entry("n_runs", "Number of Runs", "5", row_idx)
-            row_idx += 2
-            
-            # Add separator
-            sep = customtkinter.CTkFrame(self.params_scroll, height=2, fg_color=("gray70", "gray30"))
-            sep.grid(row=row_idx, column=0, columnspan=2, padx=0, pady=10, sticky="ew")
-            row_idx += 1
-            
-            # FA parameters
-            fa_label = customtkinter.CTkLabel(
-                self.params_scroll, 
-                text="Firefly Algorithm Parameters",
-                font=customtkinter.CTkFont(size=11, weight="bold")
-            )
-            fa_label.grid(row=row_idx, column=0, columnspan=2, padx=0, pady=(5, 8), sticky="w")
-            row_idx += 1
-            
-            self._add_param_entry("FA_n_fireflies", "Number of Fireflies", "25", row_idx)
-            row_idx += 2
-            self._add_param_entry("FA_alpha", "Alpha (randomization)", "0.5", row_idx)
-            row_idx += 2
-            self._add_param_entry("FA_alpha_min", "Min Alpha", "0.01", row_idx)
-            row_idx += 2
-            self._add_param_entry("FA_beta0", "Beta0 (attractiveness)", "1.0", row_idx)
-            row_idx += 2
-            self._add_param_entry("FA_gamma", "Gamma (absorption)", "1.0", row_idx)
-            row_idx += 2
-            
-            # Add separator
-            sep = customtkinter.CTkFrame(self.params_scroll, height=2, fg_color=("gray70", "gray30"))
-            sep.grid(row=row_idx, column=0, columnspan=2, padx=0, pady=10, sticky="ew")
-            row_idx += 1
-            
-            # SA parameters
-            sa_label = customtkinter.CTkLabel(
-                self.params_scroll, 
-                text="SA Parameters",
-                font=customtkinter.CTkFont(size=11, weight="bold")
-            )
-            sa_label.grid(row=row_idx, column=0, columnspan=2, padx=0, pady=(5, 8), sticky="w")
-            row_idx += 1
-            
-            self._add_param_entry("SA_initial_temp", "Initial Temperature", "1000", row_idx)
-            row_idx += 2
-            self._add_param_entry("SA_final_temp", "Final Temperature", "0.001", row_idx)
-            row_idx += 2
-            self._add_param_entry("SA_alpha", "Alpha (cooling)", "0.98", row_idx)
-            row_idx += 2
-            self._add_param_entry("SA_cooling_schedule", "Cooling Schedule", "exponential", row_idx)
-            row_idx += 2
-            self._add_param_entry("SA_neighbor_std", "Neighbor Std", "0.3", row_idx)
-            row_idx += 2
-            self._add_param_entry("SA_inner_loops", "Inner Loops", "50", row_idx)
-            row_idx += 2
-            self._add_param_entry("SA_patience", "Patience", "1500", row_idx)
-            row_idx += 2
-            
-        elif "CS vs SA" in experiment:
-            # Common parameters
-            self._add_param_entry("dim", "Dimensions", "10", row_idx)
-            row_idx += 2
-            self._add_param_entry("max_iter", "Max Iterations", "100", row_idx)
-            row_idx += 2
-            self._add_param_entry("n_runs", "Number of Runs", "5", row_idx)
-            row_idx += 2
-            
-            # Add separator
-            sep = customtkinter.CTkFrame(self.params_scroll, height=2, fg_color=("gray70", "gray30"))
-            sep.grid(row=row_idx, column=0, columnspan=2, padx=0, pady=10, sticky="ew")
-            row_idx += 1
-            
-            # CS parameters
-            cs_label = customtkinter.CTkLabel(
-                self.params_scroll, 
-                text="Cuckoo Search Parameters",
-                font=customtkinter.CTkFont(size=11, weight="bold")
-            )
-            cs_label.grid(row=row_idx, column=0, columnspan=2, padx=0, pady=(5, 8), sticky="w")
-            row_idx += 1
-            
-            self._add_param_entry("CS_n_nests", "Number of Nests", "25", row_idx)
-            row_idx += 2
-            self._add_param_entry("CS_pa", "Discovery Probability", "0.25", row_idx)
-            row_idx += 2
-            self._add_param_entry("CS_beta", "Beta (Lévy)", "1.5", row_idx)
-            row_idx += 2
-            self._add_param_entry("CS_step_size_factor", "Step Size Factor", "0.01", row_idx)
-            row_idx += 2
-            
-            # Add separator
-            sep = customtkinter.CTkFrame(self.params_scroll, height=2, fg_color=("gray70", "gray30"))
-            sep.grid(row=row_idx, column=0, columnspan=2, padx=0, pady=10, sticky="ew")
-            row_idx += 1
-            
-            # SA parameters
-            sa_label = customtkinter.CTkLabel(
-                self.params_scroll, 
-                text="SA Parameters",
-                font=customtkinter.CTkFont(size=11, weight="bold")
-            )
-            sa_label.grid(row=row_idx, column=0, columnspan=2, padx=0, pady=(5, 8), sticky="w")
-            row_idx += 1
-            
-            self._add_param_entry("SA_initial_temp", "Initial Temperature", "1000", row_idx)
-            row_idx += 2
-            self._add_param_entry("SA_final_temp", "Final Temperature", "0.001", row_idx)
-            row_idx += 2
-            self._add_param_entry("SA_alpha", "Alpha (cooling)", "0.98", row_idx)
-            row_idx += 2
-            self._add_param_entry("SA_cooling_schedule", "Cooling Schedule", "exponential", row_idx)
-            row_idx += 2
-            self._add_param_entry("SA_neighbor_std", "Neighbor Std", "0.3", row_idx)
-            row_idx += 2
-            self._add_param_entry("SA_inner_loops", "Inner Loops", "50", row_idx)
-            row_idx += 2
-            self._add_param_entry("SA_patience", "Patience", "1500", row_idx)
-            row_idx += 2
-    
-    def _add_param_entry(self, key: str, label: str, default: str, row: int):
-        """Add a parameter entry widget"""
-        label_widget = customtkinter.CTkLabel(
-            self.params_scroll, 
-            text=f"{label}:",
-            font=customtkinter.CTkFont(size=10)
-        )
-        label_widget.grid(row=row, column=0, padx=0, pady=(3, 1), sticky="w")
+            for ax in [ax1, ax2]:
+                ax.legend()
+                ax.grid(True, linestyle='--', alpha=0.6)
+        else:
+            fig = plot_scalability_comparison(data['scalability_data'], 
+                                            title=f"Scalability: {data['metadata']['problem'].capitalize()}")
+        plt.tight_layout()
+        return fig
         
-        entry = customtkinter.CTkEntry(
-            self.params_scroll, 
-            placeholder_text=default,
-            width=250,
-            height=28
-        )
-        entry.grid(row=row + 1, column=0, padx=0, pady=(0, 6), sticky="ew")
-        entry.insert(0, default)
+    def _start_spinner(self):
+        self.spinner_running = True
+        self.spinner_chars = ["⠋","⠙","⠹","⠸","⠼","⠴","⠦","⠧","⠇","⠏"]
+        self.spinner_index = 0
+        self.spinner_timer = QTimer()
+        self.spinner_timer.timeout.connect(self._animate_spinner)
+        self.spinner_timer.start(200)
         
-        self.param_entries[key] = entry
+    def _stop_spinner(self):
+        self.spinner_running = False
+        if hasattr(self, 'spinner_timer'):
+            self.spinner_timer.stop()
+        self.spinner_label.setText("⏳")
         
-    def update_status(self, message, color=("gray50", "gray50")):
-        """Update status label"""
-        self.status_label.configure(text=message, text_color=color)
-        self.sidebar_frame.update()
+    def _animate_spinner(self):
+        if not self.spinner_running:
+            return
+        self.spinner_label.setText(self.spinner_chars[self.spinner_index])
+        self.spinner_index = (self.spinner_index + 1) % len(self.spinner_chars)
         
+    def _disable_inputs(self):
+        self.comparison_menu.setEnabled(False)
+        for entry in self.param_entries.values():
+            entry.setEnabled(False)
+            
+    def _enable_inputs(self):
+        self.comparison_menu.setEnabled(True)
+        for entry in self.param_entries.values():
+            entry.setEnabled(True)
+            
+    def update_status(self, message, color="#aaaaaa"):
+        icon_map = {"Ready": "●", "Running": "⏳", "Complete": "✓", "Cancelled": "⏹", "Error": "✖"}
+        icon = next((icon_map[key] for key in icon_map if key in message), "●")
+        self.status_label.setText(f"{icon} {message}")
+        self.status_label.setStyleSheet(f"color: {color}; padding: 10px;")
+
+    def update_progress(self, message):
+        self.progress_message.setText(message)
+
     def run_experiment(self):
-        """Run the experiment in a separate thread"""
         if self.is_running:
             return
-        
+            
         self.is_running = True
-        self.run_button.configure(state="disabled", text="⏳ Running...")
-        self.update_status("Running comparison...", ("orange", "orange"))
+        self._disable_inputs()
         
-        thread = threading.Thread(target=self._run_experiment_thread, daemon=True)
-        thread.start()
+        self.run_button.hide()
+        self.cancel_button.show()
+        self.save_button.setEnabled(False)
+        self.progress_frame.show()
         
-    def _run_experiment_thread(self):
-        """Thread worker for running experiments"""
-        try:
-            experiment = self.comparison_menu.get()
-            runner = ComparisonRunner(seed=42)
-            
-            if "TSP" in experiment:
-                n_cities = int(self.param_entries["n_cities"].get())
-                max_iter = int(self.param_entries["max_iter"].get())
-                n_runs = int(self.param_entries["n_runs"].get())
-                
-                # Parse ACO parameters
-                aco_params = {
-                    'n_ants': int(self.param_entries["ACO_n_ants"].get()),
-                    'alpha': float(self.param_entries["ACO_alpha"].get()),
-                    'beta': float(self.param_entries["ACO_beta"].get()),
-                    'rho': float(self.param_entries["ACO_rho"].get()),
-                    'phi': float(self.param_entries["ACO_phi"].get()),
-                    'q0': float(self.param_entries["ACO_q0"].get()),
-                }
-                
-                # Parse SA parameters
-                sa_params = {
-                    'initial_temp': int(self.param_entries["SA_initial_temp"].get()),
-                    'final_temp': float(self.param_entries["SA_final_temp"].get()),
-                    'alpha': float(self.param_entries["SA_alpha"].get()),
-                    'cooling_schedule': self.param_entries["SA_cooling_schedule"].get(),
-                    'patience': int(self.param_entries["SA_patience"].get()),
-                }
-                
-                algo_params = {'ACO': aco_params, 'SA': sa_params}
-                
-                results = runner.run_tsp_comparison(n_cities, max_iter, n_runs, algo_params)
-            else:
-                dim = int(self.param_entries["dim"].get())
-                max_iter = int(self.param_entries["max_iter"].get())
-                n_runs = int(self.param_entries["n_runs"].get())
-                
-                # Determine problem and algorithms with their parameters
-                algo_params = {}
-                if "PSO vs HC" in experiment:
-                    problem = "rastrigin"
-                    algos = ["PSO", "HC"]
-                    pso_params = {
-                        'n_particles': int(self.param_entries['PSO_n_particles'].get()),
-                        'w': float(self.param_entries['PSO_w'].get()),
-                        'c1': float(self.param_entries['PSO_c1'].get()),
-                        'c2': float(self.param_entries['PSO_c2'].get()),
-                        'w_min': float(self.param_entries['PSO_w_min'].get()),
-                        'w_max': float(self.param_entries['PSO_w_max'].get()),
-                        'v_max_ratio': float(self.param_entries['PSO_v_max_ratio'].get()),
-                    }
-                    hc_params = {
-                        'step_size': float(self.param_entries['HC_step_size'].get()),
-                        'random_restart': int(self.param_entries['HC_random_restart'].get()),
-                    }
-                    algo_params = {'PSO': pso_params, 'HC': hc_params}
+        self.update_progress("Initializing benchmark...")
+        self._start_spinner()
+        self.update_status("Running...", "#FFA500")
+        
+        experiment = self.comparison_menu.currentText()
+        
+        worker_params = {}
+        algo_params = {}
+        algos = []
 
-                elif "ABC vs GA" in experiment:
-                    problem = "rastrigin"
-                    algos = ["ABC", "GA"]
-                    abc_limit = self.param_entries['ABC_limit'].get()
-                    abc_params = {
-                        'n_bees': int(self.param_entries['ABC_n_bees'].get()),
-                        'limit': None if abc_limit == 'auto' else int(abc_limit),
-                        'modification_rate': float(self.param_entries['ABC_modification_rate'].get()),
-                    }
-                    ga_params = {
-                        'pop_size': int(self.param_entries['GA_pop_size'].get()),
-                        'crossover_rate': float(self.param_entries['GA_crossover_rate'].get()),
-                        'mutation_rate': float(self.param_entries['GA_mutation_rate'].get()),
-                        'tournament_size': int(self.param_entries['GA_tournament_size'].get()),
-                        'elitism_ratio': float(self.param_entries['GA_elitism_ratio'].get()),
-                    }
-                    algo_params = {'ABC': abc_params, 'GA': ga_params}
+        def parse_value(value_str):
+            if value_str.lower() == 'auto':
+                return None
+            try:
+                value = float(value_str)
+                if value.is_integer():
+                    return int(value)
+                return value
+            except ValueError:
+                return value_str
 
-                elif "FA vs SA" in experiment:
-                    problem = "ackley"
-                    algos = ["FA", "SA"]
-                    fa_params = {
-                        'n_fireflies': int(self.param_entries['FA_n_fireflies'].get()),
-                        'alpha': float(self.param_entries['FA_alpha'].get()),
-                        'alpha_min': float(self.param_entries['FA_alpha_min'].get()),
-                        'beta0': float(self.param_entries['FA_beta0'].get()),
-                        'gamma': float(self.param_entries['FA_gamma'].get()),
-                    }
-                    sa_params = {
-                        'initial_temp': int(self.param_entries['SA_initial_temp'].get()),
-                        'final_temp': float(self.param_entries['SA_final_temp'].get()),
-                        'alpha': float(self.param_entries['SA_alpha'].get()),
-                        'cooling_schedule': self.param_entries['SA_cooling_schedule'].get(),
-                        'neighbor_std': float(self.param_entries['SA_neighbor_std'].get()),
-                        'inner_loops': int(self.param_entries['SA_inner_loops'].get()),
-                        'patience': int(self.param_entries['SA_patience'].get()),
-                    }
-                    algo_params = {'FA': fa_params, 'SA': sa_params}
+        raw_params = {key: entry.text() or entry.placeholderText() for key, entry in self.param_entries.items()}
 
-                elif "CS vs SA" in experiment:
-                    problem = "ackley"
-                    algos = ["CS", "SA"]
-                    cs_params = {
-                        'n_nests': int(self.param_entries['CS_n_nests'].get()),
-                        'pa': float(self.param_entries['CS_pa'].get()),
-                        'beta': float(self.param_entries['CS_beta'].get()),
-                        'step_size_factor': float(self.param_entries['CS_step_size_factor'].get()),
-                    }
-                    sa_params = {
-                        'initial_temp': int(self.param_entries['SA_initial_temp'].get()),
-                        'final_temp': float(self.param_entries['SA_final_temp'].get()),
-                        'alpha': float(self.param_entries['SA_alpha'].get()),
-                        'cooling_schedule': self.param_entries['SA_cooling_schedule'].get(),
-                        'neighbor_std': float(self.param_entries['SA_neighbor_std'].get()),
-                        'inner_loops': int(self.param_entries['SA_inner_loops'].get()),
-                        'patience': int(self.param_entries['SA_patience'].get()),
-                    }
-                    algo_params = {'CS': cs_params, 'SA': sa_params}
-                
-                results = runner.run_continuous_comparison(
-                    problem, dim, max_iter, n_runs, algos, algo_params
-                )
+        if "TSP" in experiment:
+            worker_params['n_cities'] = int(raw_params.get('n_cities', 20))
+            algos = ['ACO', 'SA']
+        else:
+            problem_map = { "Rastrigin": "rastrigin", "Ackley": "ackley" }
+            for key, value in problem_map.items():
+                if key in experiment:
+                    worker_params['problem'] = value
+                    break
+            worker_params['dim'] = int(raw_params.get('dim', 10))
             
-            self.parent.after(0, self._update_ui_with_results, results)
-            
-        except Exception as e:
-            import traceback
-            error_msg = f"Error: {str(e)}\n\n{traceback.format_exc()}"
-            print(error_msg)
-            self.parent.after(0, self._show_error, str(e))
-        finally:
-            self.parent.after(0, self._experiment_complete)
-            
+            if "PSO vs HC" in experiment: algos = ['PSO', 'HC']
+            elif "ABC vs GA" in experiment: algos = ['ABC', 'GA']
+            elif "FA vs SA" in experiment: algos = ['FA', 'SA']
+            elif "CS vs SA" in experiment: algos = ['CS', 'SA']
+
+        worker_params['max_iter'] = int(raw_params.get('max_iter', 100))
+        worker_params['n_runs'] = int(raw_params.get('n_runs', 5))
+
+        for key, value_str in raw_params.items():
+            if '_' in key:
+                algo_name, param_name = key.split('_', 1)
+                if algo_name in algos:
+                    if algo_name not in algo_params:
+                        algo_params[algo_name] = {}
+                    algo_params[algo_name][param_name] = parse_value(value_str)
+
+        worker_params['algos'] = algos
+        worker_params['algo_params'] = algo_params
+        
+        self.worker = ComparisonWorker(experiment, worker_params)
+        self.worker.progress.connect(self.update_progress)
+        self.worker.finished.connect(self._update_ui_with_results)
+        self.worker.error.connect(self._show_error)
+        self.worker.cancelled.connect(self._experiment_cancelled)
+        self.worker.finished.connect(self._experiment_complete)
+        self.worker.error.connect(self._experiment_complete)
+        self.worker.cancelled.connect(self._experiment_complete)
+        self.worker.start()
+        
+    def cancel_experiment(self):
+        if not self.is_running or not self.worker:
+            return
+        
+        self.worker.cancel()
+        self.update_progress("Cancelling...")
+        self.update_status("Cancelling...", "#FF6B6B")
+        self.cancel_button.setEnabled(False)
+        
+    def _clear_figures(self):
+        for fig in self.generated_figures.values():
+            plt.close(fig)
+        self.generated_figures.clear()
+        
     def _update_ui_with_results(self, results):
-        """Update UI with results"""
+        self._clear_figures()
         self.metric_data = results
         self.show_metric_view(self.current_view)
-        self.save_button.configure(state="normal")
+        self.save_button.setEnabled(True)
         
     def _show_error(self, error_msg):
-        """Show error message"""
-        error_text = f"❌ ERROR\n\n{error_msg}"
-        self.metric_data = {k: error_text for k in self.metric_data.keys()}
+        self._clear_figures()
+        error_text = f"✖ BENCHMARK ERROR\n\n{error_msg}"
+        self.metric_data = {k: error_text for k in ["convergence", "complexity", "robustness", "scalability"]}
         self.show_metric_view(self.current_view)
-        self.update_status("Error occurred", ("red", "red"))
+        self.update_status("Error occurred", "#FF6B6B")
+        
+    def _experiment_cancelled(self):
+        self._clear_figures()
+        self.update_progress("Cancelled by user")
+        self.update_status("Cancelled", "#FF6B6B")
+        self.metric_data = {k: "⏹ Benchmark cancelled by user." for k in ["convergence", "complexity", "robustness", "scalability"]}
+        self.show_metric_view(self.current_view)
         
     def _experiment_complete(self):
-        """Clean up after experiment"""
         self.is_running = False
-        self.run_button.configure(state="normal", text="▶ Run Comparison")
-        self.update_status("Comparison complete ✓", ("green", "green"))
+        self._enable_inputs()
+        self._stop_spinner()
+        self.progress_frame.hide()
+        self.cancel_button.hide()
+        self.run_button.show()
+        self.cancel_button.setEnabled(True)
+        
+        if "Cancelled" not in self.status_label.text() and "Error" not in self.status_label.text():
+            self.update_status("Benchmark Complete ✓", "#00D9A5")
         
     def save_figure(self):
-        """Save current figure"""
-        data = self.metric_data.get(self.current_view)
-        
-        if isinstance(data, plt.Figure):
-            filepath = tkinter.filedialog.asksaveasfilename(
-                defaultextension=".png",
-                filetypes=[
-                    ("PNG files", "*.png"),
-                    ("PDF files", "*.pdf"),
-                    ("SVG files", "*.svg"),
-                    ("All files", "*.*")
-                ],
-                title=f"Save {self.current_view.capitalize()} Plot"
+        fig = self.generated_figures.get(self.current_view)
+        if fig:
+            filepath, _ = QFileDialog.getSaveFileName(
+                self.parent,
+                f"Export {self.current_view.capitalize()} Plot",
+                "",
+                "PNG Image (*.png);;PDF Document (*.pdf);;SVG Vector (*.svg);;All Files (*.*)"
             )
             if filepath:
-                data.savefig(filepath, dpi=300, bbox_inches='tight')
-                self.update_status(f"Saved to {os.path.basename(filepath)} ✓", ("green", "green"))
+                fig.savefig(filepath, dpi=300, bbox_inches='tight')
+                self.update_status(f"Exported: {os.path.basename(filepath)} ✓", "#00D9A5")
         else:
-            self.update_status("No figure to save", ("orange", "orange"))
+            self.update_status("No visualization to export", "#FFD166")
