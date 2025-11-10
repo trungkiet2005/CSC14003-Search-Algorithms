@@ -146,14 +146,15 @@ class FA(PopulationBasedOptimizer):
 
 def run_fa(objective_func: Callable, dim: int, bounds: Tuple[float, float],
           n_fireflies: int = 25, max_iter: int = 100,
-          alpha: float = 0.5, beta0: float = 1.0, gamma: float = 1.0,
+          alpha: float = 0.5, alpha_min: float = 0.01,
+          beta0: float = 1.0, gamma: float = 1.0,
           minimize: bool = True, seed: Optional[int] = None) -> dict:
     """
     Convenience function to run Firefly Algorithm
     
     Returns dictionary for backward compatibility
     """
-    fa = FA(n_fireflies=n_fireflies, alpha=alpha, beta0=beta0, 
-            gamma=gamma, seed=seed)
+    fa = FA(n_fireflies=n_fireflies, alpha=alpha, alpha_min=alpha_min,
+            beta0=beta0, gamma=gamma, seed=seed)
     result = fa.optimize(objective_func, dim, bounds, max_iter, minimize)
     return result.to_dict()

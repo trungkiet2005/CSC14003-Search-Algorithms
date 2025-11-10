@@ -191,13 +191,14 @@ class CS(PopulationBasedOptimizer):
 
 def run_cs(objective_func: Callable, dim: int, bounds: Tuple[float, float],
           n_nests: int = 25, max_iter: int = 100, pa: float = 0.25,
-          beta: float = 1.5, minimize: bool = True, 
-          seed: Optional[int] = None) -> dict:
+          beta: float = 1.5, step_size_factor: float = 0.01,
+          minimize: bool = True, seed: Optional[int] = None) -> dict:
     """
     Convenience function to run Cuckoo Search
     
     Returns dictionary for backward compatibility
     """
-    cs = CS(n_nests=n_nests, pa=pa, beta=beta, seed=seed)
+    cs = CS(n_nests=n_nests, pa=pa, beta=beta, 
+            step_size_factor=step_size_factor, seed=seed)
     result = cs.optimize(objective_func, dim, bounds, max_iter, minimize)
     return result.to_dict()

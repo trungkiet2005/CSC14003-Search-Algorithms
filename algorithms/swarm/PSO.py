@@ -147,13 +147,16 @@ class PSO(PopulationBasedOptimizer):
 def run_pso(objective_func: Callable, dim: int, bounds: Tuple[float, float],
            n_particles: int = 30, max_iter: int = 100,
            w: float = 0.7298, c1: float = 1.49618, c2: float = 1.49618,
+           w_min: float = 0.4, w_max: float = 0.9, v_max_ratio: float = 0.2,
            minimize: bool = True, seed: Optional[int] = None) -> dict:
     """
     Convenience function to run PSO
     
     Returns dictionary for backward compatibility
     """
-    pso = PSO(n_particles=n_particles, w=w, c1=c1, c2=c2, seed=seed)
+    pso = PSO(n_particles=n_particles, w=w, c1=c1, c2=c2, 
+              w_min=w_min, w_max=w_max, v_max_ratio=v_max_ratio,
+              seed=seed)
     result = pso.optimize(objective_func, dim, bounds, max_iter, minimize)
     return result.to_dict()
 

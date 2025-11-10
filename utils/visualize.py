@@ -73,7 +73,7 @@ def plot_convergence_comparison(histories_dict: Dict[str, List[float]],
         if save_path:
             plt.savefig(save_path, bbox_inches='tight', dpi=300)
             print(f"Saved: {save_path}")
-        plt.show()
+        # plt.show()
 
 
 def plot_boxplot_comparison(data_dict: Dict[str, List[float]],
@@ -135,7 +135,7 @@ def plot_boxplot_comparison(data_dict: Dict[str, List[float]],
         if save_path:
             plt.savefig(save_path, bbox_inches='tight', dpi=300)
             print(f"Saved: {save_path}")
-        plt.show()
+        # plt.show()
 
 
 def plot_3d_surface(func: Callable, bounds: Tuple[float, float],
@@ -202,7 +202,7 @@ def plot_3d_surface(func: Callable, bounds: Tuple[float, float],
         plt.savefig(save_path, bbox_inches='tight', dpi=300)
         print(f"Saved: {save_path}")
     
-    plt.show()
+    # plt.show()
 
 
 def plot_contour(func: Callable, bounds: Tuple[float, float],
@@ -274,7 +274,7 @@ def plot_contour(func: Callable, bounds: Tuple[float, float],
         plt.savefig(save_path, bbox_inches='tight', dpi=300)
         print(f"Saved: {save_path}")
     
-    plt.show()
+    # plt.show()
 
 
 def plot_tsp_route(cities: np.ndarray, route: list, distance: float,
@@ -347,7 +347,7 @@ def plot_tsp_route(cities: np.ndarray, route: list, distance: float,
         if save_path:
             plt.savefig(save_path, bbox_inches='tight', dpi=300)
             print(f"Saved: {save_path}")
-        plt.show()
+        # plt.show()
 
 
 def plot_parameter_sensitivity(param_values: List, 
@@ -387,7 +387,7 @@ def plot_parameter_sensitivity(param_values: List,
         plt.savefig(save_path, bbox_inches='tight', dpi=300)
         print(f"Saved: {save_path}")
     
-    plt.show()
+    # plt.show()
 
 
 def plot_comparison_table(df: pd.DataFrame, 
@@ -454,7 +454,7 @@ def plot_comparison_table(df: pd.DataFrame,
         plt.savefig(save_path, bbox_inches='tight', dpi=300)
         print(f"Saved: {save_path}")
     
-    plt.show()
+    # plt.show()
 
 
 def plot_scalability_comparison(scalability_data: Dict[str, Dict[str, List]],
