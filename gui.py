@@ -1,6 +1,8 @@
 import tkinter
 import customtkinter
 import matplotlib.pyplot as plt
+import seaborn as sns
+from matplotlib.lines import Line2D
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import numpy as np
 import sys
@@ -22,6 +24,7 @@ from algorithms.swarm.CS import run_cs
 
 from algorithms.traditional.simulated_annealing import run_simulated_annealing, run_simulated_annealing_tsp
 from algorithms.traditional.genetic_algorithm import run_ga
+from algorithms.traditional.hill_climbing import run_hill_climbing
 
 # Import problems
 from problems.continuous import get_problem
@@ -31,10 +34,10 @@ from problems.tsp import create_tsp_problem
 from utils.benchmark import BenchmarkRunner
 from utils.visualize import (
     plot_convergence_comparison, plot_boxplot_comparison,
-    plot_tsp_route
+    plot_tsp_route, plot_complexity_comparison, plot_scalability_comparison
 )
 
-customtkinter.set_appearance_mode("dark")
+customtkinter.set_appearance_mode("white")
 customtkinter.set_default_color_theme("blue")
 
 
@@ -74,11 +77,9 @@ class GuiExperimentRunner:
         return stats_list, metrics
 
     def plot_continuous_experiment(self, stats_list, problem_name, dim):
-        """Plot continuous experiment results."""
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(20, 7))
-        fig.suptitle(f"{problem_name.capitalize()} (dim={dim})", fontsize=16)
-
+        """Plot continuous experiment results and return separate figures."""
         # 1. Convergence plot
+        convergence_fig, ax1 = plt.subplots(figsize=(10, 7))
         histories = {}
         for stats in stats_list:
             if stats.results:
@@ -88,24 +89,60 @@ class GuiExperimentRunner:
 
         plot_convergence_comparison(
             histories,
-            title="Convergence Comparison",
+            title=f"Convergence: {problem_name.capitalize()} (dim={dim})",
             ax=ax1,
             log_scale=True
         )
+        convergence_fig.tight_layout()
 
         # 2. Boxplot
+        boxplot_fig, ax2 = plt.subplots(figsize=(10, 7))
         boxplot_data = {stats.algorithm_name: stats.all_fitnesses for stats in stats_list}
         plot_boxplot_comparison(
             boxplot_data,
-            title="Performance Distribution",
+            title=f"Robustness: {problem_name.capitalize()} (dim={dim})",
             ax=ax2
         )
+        boxplot_fig.tight_layout()
 
-        plt.tight_layout(rect=[0, 0, 1, 0.96])
+        return {
+            "convergence": convergence_fig,
+            "robustness": boxplot_fig
+        }
+
+    def plot_complexity_experiment(self, stats_list, problem_name, dim):
+        """Plot complexity experiment results."""
+        fig = plot_complexity_comparison(
+            stats_list,
+            title=f"Complexity: {problem_name.capitalize()} (dim={dim})"
+        )
+        return fig
+
+    def run_scalability_experiment(self, problem_name, algorithms, n_runs, max_iter, dims):
+        """Run experiment across multiple dimensions for scalability analysis."""
+        all_stats = {algo_name: {'dims': [], 'fitness': [], 'times': []} for algo_name in algorithms}
+
+        for dim in dims:
+            stats_list, _ = self.run_continuous_experiment_data(
+                problem_name, dim, algorithms, n_runs, max_iter
+            )
+            for stats in stats_list:
+                all_stats[stats.algorithm_name]['dims'].append(dim)
+                all_stats[stats.algorithm_name]['fitness'].append(stats.best_fitness)
+                all_stats[stats.algorithm_name]['times'].append(stats.mean_time)
+        
+        return all_stats
+
+    def plot_scalability_experiment(self, scalability_data, problem_name):
+        """Plot scalability experiment results."""
+        fig = plot_scalability_comparison(
+            scalability_data,
+            title=f"Scalability Analysis: {problem_name.capitalize()}"
+        )
         return fig
 
     def run_tsp_experiment_data(self, n_cities: int, algorithms: dict,
-                               n_runs: int = 1, max_iter: int = 100):
+                               n_runs: int = 5, max_iter: int = 100):
         """Run experiment on TSP and return data."""
         tsp = create_tsp_problem(n_cities, seed=self.seed)
         cities = tsp['cities']
@@ -143,7 +180,8 @@ class GuiExperimentRunner:
                 'std_distance': np.std(fitnesses),
                 'best_distance': np.min(fitnesses),
                 'mean_time': np.mean(times),
-                'best_result': best_result
+                'best_result': best_result,
+                'all_distances': fitnesses
             }
         
         return cities, results
@@ -168,6 +206,146 @@ class GuiExperimentRunner:
         plt.tight_layout()
 
         return fig
+    
+    def plot_tsp_complexity(self, results):
+        """Plot complexity comparison for TSP."""
+        
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6))
+        fig.suptitle("TSP Computational Complexity", fontsize=16, fontweight='bold')
+        
+        algo_names = list(results.keys())
+        mean_times = [results[name]['mean_time'] for name in algo_names]
+        mean_distances = [results[name]['mean_distance'] for name in algo_names]
+        
+        colors = sns.color_palette("viridis", len(algo_names))
+        
+        # 1. Execution Time
+        bars1 = ax1.bar(algo_names, mean_times, color=colors, alpha=0.8)
+        ax1.set_title("Mean Execution Time", fontsize=14)
+        ax1.set_ylabel("Time (seconds)", fontsize=12)
+        plt.setp(ax1.xaxis.get_majorticklabels(), rotation=45, ha='right')
+        ax1.grid(True, axis='y', linestyle='--', alpha=0.6)
+        
+        for bar in bars1:
+            yval = bar.get_height()
+            ax1.text(bar.get_x() + bar.get_width()/2.0, yval, f'{yval:.4f}s', 
+                     va='bottom', ha='center', fontsize=10)
+        
+        # 2. Solution Quality
+        bars2 = ax2.bar(algo_names, mean_distances, color=colors, alpha=0.8)
+        ax2.set_title("Mean Solution Quality", fontsize=14)
+        ax2.set_ylabel("Tour Distance", fontsize=12)
+        plt.setp(ax2.xaxis.get_majorticklabels(), rotation=45, ha='right')
+        ax2.grid(True, axis='y', linestyle='--', alpha=0.6)
+        
+        for bar in bars2:
+            yval = bar.get_height()
+            ax2.text(bar.get_x() + bar.get_width()/2.0, yval, f'{yval:.2f}', 
+                     va='bottom', ha='center', fontsize=10)
+        
+        plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+        return fig
+
+    def plot_tsp_robustness(self, results):
+        """Plot robustness (boxplot) for TSP."""
+        
+        fig, ax = plt.subplots(figsize=(12, 7))
+        
+        algo_names = list(results.keys())
+        # Note: We need all_distances stored in results
+        data = []
+        labels = []
+        for name in algo_names:
+            if 'all_distances' in results[name]:
+                data.append(results[name]['all_distances'])
+                labels.append(name)
+        
+        if not data:
+            # If no data, show text
+            ax.text(0.5, 0.5, 'Run multiple times\nto see robustness analysis', 
+                   ha='center', va='center', fontsize=14, transform=ax.transAxes)
+            ax.axis('off')
+            return fig
+        
+        # Create boxplot
+        bp = ax.boxplot(data, labels=labels, patch_artist=True,
+                       showmeans=True, meanline=True,
+                       boxprops=dict(linewidth=1.5),
+                       whiskerprops=dict(linewidth=1.5),
+                       capprops=dict(linewidth=1.5),
+                       medianprops=dict(color='red', linewidth=2),
+                       meanprops=dict(color='blue', linewidth=2, linestyle='--'))
+        
+        colors = sns.color_palette("Set3", len(data))
+        for patch, color in zip(bp['boxes'], colors):
+            patch.set_facecolor(color)
+            patch.set_alpha(0.7)
+        
+        ax.set_title("TSP Robustness Analysis - Distance Distribution", 
+                    fontsize=16, fontweight='bold')
+        ax.set_ylabel("Tour Distance", fontsize=13)
+        ax.set_xlabel("Algorithm", fontsize=13)
+        plt.setp(ax.xaxis.get_majorticklabels(), rotation=45, ha='right')
+        ax.grid(True, alpha=0.3, axis='y', linestyle='--')
+        
+        legend_elements = [
+            Line2D([0], [0], color='red', linewidth=2, label='Median'),
+            Line2D([0], [0], color='blue', linewidth=2, linestyle='--', label='Mean')
+        ]
+        ax.legend(handles=legend_elements, loc='best', fontsize=10)
+        
+        plt.tight_layout()
+        return fig
+
+    def plot_tsp_scalability(self, algorithms, max_iter, city_counts):
+        """Plot scalability analysis for TSP."""
+        
+        scalability_data = {}
+        for algo_name in algorithms:
+            scalability_data[algo_name] = {
+                'cities': [],
+                'distances': [],
+                'times': []
+            }
+        
+        for n_cities in city_counts:
+            cities, results = self.run_tsp_experiment_data(
+                n_cities, algorithms, n_runs=3, max_iter=max_iter
+            )
+            for algo_name, result in results.items():
+                scalability_data[algo_name]['cities'].append(n_cities)
+                scalability_data[algo_name]['distances'].append(result['mean_distance'])
+                scalability_data[algo_name]['times'].append(result['mean_time'])
+        
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(18, 7))
+        fig.suptitle("TSP Scalability Analysis", fontsize=18, fontweight='bold')
+        
+        colors = sns.color_palette("husl", len(scalability_data))
+        
+        # 1. Solution Quality vs Problem Size
+        for (algo_name, data), color in zip(scalability_data.items(), colors):
+            ax1.plot(data['cities'], data['distances'], 
+                    marker='o', linestyle='-', color=color, 
+                    linewidth=2, markersize=8, label=algo_name)
+        ax1.set_title("Solution Quality vs. Problem Size", fontsize=14)
+        ax1.set_xlabel("Number of Cities", fontsize=12)
+        ax1.set_ylabel("Mean Tour Distance", fontsize=12)
+        ax1.legend(fontsize=11)
+        ax1.grid(True, linestyle='--', alpha=0.6)
+        
+        # 2. Execution Time vs Problem Size
+        for (algo_name, data), color in zip(scalability_data.items(), colors):
+            ax2.plot(data['cities'], data['times'], 
+                    marker='o', linestyle='-', color=color,
+                    linewidth=2, markersize=8, label=algo_name)
+        ax2.set_title("Execution Time vs. Problem Size", fontsize=14)
+        ax2.set_xlabel("Number of Cities", fontsize=12)
+        ax2.set_ylabel("Mean Time (seconds)", fontsize=12)
+        ax2.legend(fontsize=11)
+        ax2.grid(True, linestyle='--', alpha=0.6)
+        
+        plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+        return fig
 
 
 class App(customtkinter.CTk):
@@ -180,7 +358,6 @@ class App(customtkinter.CTk):
         
         # Configure grid layout
         self.grid_columnconfigure(1, weight=1)
-        self.grid_columnconfigure(2, weight=0)
         self.grid_rowconfigure(0, weight=1)
 
         # Create sidebar frame
@@ -222,7 +399,7 @@ class App(customtkinter.CTk):
             self.sidebar_frame, 
             values=[
                 "ACO vs SA (TSP)", 
-                "PSO vs GA (Rastrigin)", 
+                "PSO vs HC (Rastrigin)", 
                 "ABC vs GA (Rastrigin)", 
                 "FA vs SA (Ackley)", 
                 "CS vs SA (Ackley)"
@@ -272,8 +449,7 @@ class App(customtkinter.CTk):
             width=240,
             height=35,
             font=customtkinter.CTkFont(size=13),
-            fg_color=("gray70", "gray30"),
-            hover_color=("gray60", "gray40")
+            state="disabled"
         )
         self.save_button.grid(row=9, column=0, padx=20, pady=(0, 10))
         
@@ -286,90 +462,123 @@ class App(customtkinter.CTk):
         )
         self.status_label.grid(row=11, column=0, padx=20, pady=(10, 20), sticky="s")
 
-        # Create main visualization area
-        self.main_frame = customtkinter.CTkFrame(self, corner_radius=10)
-        self.main_frame.grid(row=0, column=1, padx=20, pady=20, sticky="nsew")
-        self.main_frame.grid_columnconfigure(0, weight=1)
-        self.main_frame.grid_rowconfigure(0, weight=1)
-
-        # Placeholder for visualization
-        self.placeholder_label = customtkinter.CTkLabel(
-            self.main_frame,
-            text="📊\n\nSelect an experiment and click 'Run'\nto visualize algorithm performance",
-            font=customtkinter.CTkFont(size=16),
-            text_color=("gray50", "gray50")
-        )
-        self.placeholder_label.grid(row=0, column=0, padx=40, pady=40)
-
-        self.fig = None
-        self.canvas = None
+        # Main content is now the results frame, no separate visualization area
+        self.main_fig = None # To store the main figure for saving
         self.is_running = False
 
-        # Create results frame with tabs
+        # Create results frame
         self.results_frame = customtkinter.CTkFrame(self, corner_radius=10)
-        self.results_frame.grid(row=0, column=2, padx=(0, 20), pady=20, sticky="nsew")
-        self.results_frame.grid_rowconfigure(1, weight=1)
-        
+        self.results_frame.grid(row=0, column=1, padx=20, pady=20, sticky="nsew")
+        self.results_frame.grid_rowconfigure(2, weight=1)
+        self.results_frame.grid_columnconfigure(0, weight=1)
+
         self.results_title = customtkinter.CTkLabel(
             self.results_frame,
             text="📈 Performance Analysis",
             font=customtkinter.CTkFont(size=16, weight="bold")
         )
         self.results_title.grid(row=0, column=0, padx=20, pady=(20, 10), sticky="w")
-        
-        # Create tabview for different metrics
-        self.tabview = customtkinter.CTkTabview(self.results_frame, width=400)
-        self.tabview.grid(row=1, column=0, padx=20, pady=(0, 20), sticky="nsew")
-        
-        # Add tabs
-        self.tabview.add("Summary")
-        self.tabview.add("Convergence")
-        self.tabview.add("Robustness")
-        self.tabview.add("Complexity")
-        
-        # Create textboxes for each tab
-        self.summary_textbox = customtkinter.CTkTextbox(
-            self.tabview.tab("Summary"),
-            font=customtkinter.CTkFont(size=11, family="Courier"),
-            wrap="word"
+
+        # Frame for the metric buttons
+        self.metrics_button_frame = customtkinter.CTkFrame(self.results_frame, fg_color="transparent")
+        self.metrics_button_frame.grid(row=1, column=0, padx=20, pady=(0, 10), sticky="ew")
+        self.metrics_button_frame.grid_columnconfigure((0, 1, 2, 3), weight=1)
+
+        # Metric buttons
+        self.convergence_button = customtkinter.CTkButton(
+            self.metrics_button_frame, text="Convergence", command=lambda: self.show_metric_view("convergence")
         )
-        self.summary_textbox.pack(fill="both", expand=True, padx=10, pady=10)
-        
-        self.convergence_textbox = customtkinter.CTkTextbox(
-            self.tabview.tab("Convergence"),
-            font=customtkinter.CTkFont(size=11, family="Courier"),
-            wrap="word"
+        self.convergence_button.grid(row=0, column=0, padx=(0, 5), sticky="ew")
+
+        self.complexity_button = customtkinter.CTkButton(
+            self.metrics_button_frame, text="Complexity", command=lambda: self.show_metric_view("complexity")
         )
-        self.convergence_textbox.pack(fill="both", expand=True, padx=10, pady=10)
-        
-        self.robustness_textbox = customtkinter.CTkTextbox(
-            self.tabview.tab("Robustness"),
-            font=customtkinter.CTkFont(size=11, family="Courier"),
-            wrap="word"
+        self.complexity_button.grid(row=0, column=1, padx=5, sticky="ew")
+
+        self.robustness_button = customtkinter.CTkButton(
+            self.metrics_button_frame, text="Robustness", command=lambda: self.show_metric_view("robustness")
         )
-        self.robustness_textbox.pack(fill="both", expand=True, padx=10, pady=10)
-        
-        self.complexity_textbox = customtkinter.CTkTextbox(
-            self.tabview.tab("Complexity"),
-            font=customtkinter.CTkFont(size=11, family="Courier"),
-            wrap="word"
+        self.robustness_button.grid(row=0, column=2, padx=5, sticky="ew")
+
+        self.scalability_button = customtkinter.CTkButton(
+            self.metrics_button_frame, text="Scalability", command=lambda: self.show_metric_view("scalability")
         )
-        self.complexity_textbox.pack(fill="both", expand=True, padx=10, pady=10)
-        
+        self.scalability_button.grid(row=0, column=3, padx=(5, 0), sticky="ew")
+
+        # Content frame for metrics
+        self.metric_content_frame = customtkinter.CTkFrame(self.results_frame)
+        self.metric_content_frame.grid(row=2, column=0, padx=20, pady=(0, 20), sticky="nsew")
+        self.metric_content_frame.grid_rowconfigure(0, weight=1)
+        self.metric_content_frame.grid_columnconfigure(0, weight=1)
+
+        # This frame will hold the plot or text
+        self.metric_display = customtkinter.CTkFrame(self.metric_content_frame, fg_color="transparent")
+        self.metric_display.grid(row=0, column=0, sticky="nsew")
+        self.metric_display.grid_rowconfigure(0, weight=1)
+        self.metric_display.grid_columnconfigure(0, weight=1)
+
+        # Store metric data (will hold text or figure objects)
+        self.metric_data = {}
+        self.current_metric_view = "convergence"  # default view
+
         # Initialize with placeholder text
         self._init_placeholder_text()
+        self.show_metric_view(self.current_metric_view)
 
         # Set default values
         self.change_experiment(self.experiment_menu.get())
 
+    def show_metric_view(self, view_name: str):
+        """Display the content for the selected metric view."""
+        self.current_metric_view = view_name
+
+        # Clear previous content
+        for widget in self.metric_display.winfo_children():
+            widget.destroy()
+
+        # Highlight button
+        buttons = {
+            "convergence": self.convergence_button,
+            "complexity": self.complexity_button,
+            "robustness": self.robustness_button,
+            "scalability": self.scalability_button,
+        }
+        for name, btn in buttons.items():
+            if name == view_name:
+                btn.configure(fg_color=customtkinter.ThemeManager.theme["CTkButton"]["hover_color"])
+            else:
+                btn.configure(fg_color=customtkinter.ThemeManager.theme["CTkButton"]["fg_color"])
+
+        # Get the data for the view
+        data = self.metric_data.get(view_name)
+
+        if isinstance(data, plt.Figure):
+            # If data is a matplotlib figure, display it
+            canvas = FigureCanvasTkAgg(data, master=self.metric_display)
+            canvas.draw()
+            canvas.get_tk_widget().pack(side=tkinter.TOP, fill=tkinter.BOTH, expand=1)
+        else:
+            # Otherwise, display it as text
+            textbox = customtkinter.CTkTextbox(
+                self.metric_display,
+                font=customtkinter.CTkFont(size=11, family="Courier"),
+                wrap="word"
+            )
+            textbox.pack(fill="both", expand=True, padx=5, pady=5)
+            textbox.insert("0.0", str(data))
+            textbox.configure(state="disabled")
+
     def _init_placeholder_text(self):
-        """Initialize placeholder text in all tabs."""
-        placeholder = "Run an experiment to see\ndetailed performance metrics."
-        
-        self.summary_textbox.insert("0.0", placeholder)
-        self.convergence_textbox.insert("0.0", placeholder)
-        self.robustness_textbox.insert("0.0", placeholder)
-        self.complexity_textbox.insert("0.0", placeholder)
+        """Initialize placeholder text for all metric views."""
+        placeholder_text = "Run an experiment to see\ndetailed performance metrics."
+        self.metric_data = {
+            'convergence': placeholder_text,
+            'complexity': placeholder_text,
+            'robustness': placeholder_text,
+            'scalability': placeholder_text,
+        }
+        self.result_texts = self.metric_data.copy()
+        self.show_metric_view(self.current_metric_view)
 
     def update_status(self, message, color=("gray50", "gray50")):
         """Update status label with message and color."""
@@ -395,32 +604,41 @@ class App(customtkinter.CTk):
             experiment = self.experiment_menu.get()
             runner = GuiExperimentRunner(output_dir="results/gui_runs", seed=42)
 
-            if experiment == "ACO vs SA (TSP)":
+            if "TSP" in experiment:
                 n_cities_str = self.n_cities_entry.get()
                 max_iter_str = self.max_iter_entry.get()
-                n_cities = int(n_cities_str) if n_cities_str else int(self.n_cities_entry.cget("placeholder_text"))
+                base_cities = int(n_cities_str) if n_cities_str else int(self.n_cities_entry.cget("placeholder_text"))
                 max_iter = int(max_iter_str) if max_iter_str else int(self.max_iter_entry.cget("placeholder_text"))
                 
                 tsp_algos = {
                     'ACO': (run_aco, {}),
                     'SA': (run_simulated_annealing_tsp, {})
                 }
-                cities, results = runner.run_tsp_experiment_data(n_cities, tsp_algos, n_runs=1, max_iter=max_iter)
-                result_texts = self._format_tsp_results(results, n_cities, max_iter)
-                self.after(0, self._update_ui_with_results, "tsp", (cities, results), result_texts)
-            else:
+                cities, results = runner.run_tsp_experiment_data(base_cities, tsp_algos, n_runs=1, max_iter=max_iter)
+                result_texts = self._format_tsp_results(results, base_cities, max_iter)
+                
+                # Package data for TSP plots
+                ui_data = {
+                    "cities": cities, 
+                    "results": results, 
+                    "algorithms": tsp_algos,
+                    "max_iter": max_iter,
+                    "n_cities": base_cities
+                }
+                self.after(0, self._update_ui_with_results, "tsp", ui_data, result_texts)
+            else: # Continuous problems
                 dim_str = self.dim_entry.get()
                 max_iter_str = self.max_iter_entry.get()
                 n_runs_str = self.n_runs_entry.get()
-                dim = int(dim_str) if dim_str else int(self.dim_entry.cget("placeholder_text"))
+                base_dim = int(dim_str) if dim_str else int(self.dim_entry.cget("placeholder_text"))
                 max_iter = int(max_iter_str) if max_iter_str else int(self.max_iter_entry.cget("placeholder_text"))
                 n_runs = int(n_runs_str) if n_runs_str else int(self.n_runs_entry.cget("placeholder_text"))
 
                 problem_name = ""
                 algorithms = {}
-                if experiment == "PSO vs GA (Rastrigin)":
+                if experiment == "PSO vs HC (Rastrigin)":
                     problem_name = "rastrigin"
-                    algorithms = {'PSO': (run_pso, {'n_particles': 30}), 'GA': (run_ga, {'pop_size': 50})}
+                    algorithms = {'PSO': (run_pso, {'n_particles': 30}), 'HC': (run_hill_climbing, {'step_size': 0.1, 'random_restart': 5})}
                 elif experiment == "ABC vs GA (Rastrigin)":
                     problem_name = "rastrigin"
                     algorithms = {'ABC': (run_abc, {'n_bees': 30}), 'GA': (run_ga, {'pop_size': 50})}
@@ -431,12 +649,34 @@ class App(customtkinter.CTk):
                     problem_name = "ackley"
                     algorithms = {'CS': (run_cs, {'n_nests': 25}), 'SA': (run_simulated_annealing, {})}
 
-                stats_list, metrics = runner.run_continuous_experiment_data(problem_name, dim, algorithms, n_runs, max_iter)
-                result_texts = self._format_continuous_results(metrics, dim, max_iter, n_runs)
-                self.after(0, self._update_ui_with_results, "continuous", (stats_list, problem_name, dim), result_texts)
+                # --- Main experiment for user-specified dimension ---
+                self.after(0, self.update_status, f"Running main experiment (dim={base_dim})...", ("orange", "orange"))
+                stats_list, metrics = runner.run_continuous_experiment_data(problem_name, base_dim, algorithms, n_runs, max_iter)
+                result_texts = self._format_continuous_results(metrics, base_dim, max_iter, n_runs)
+
+                # --- Scalability analysis ---
+                self.after(0, self.update_status, "Running scalability analysis...", ("orange", "orange"))
+                scalability_dims = sorted(list(set([5, 10, 20, 30, 50])))
+                
+                scalability_data = runner.run_scalability_experiment(
+                    problem_name, algorithms, n_runs, max_iter, scalability_dims
+                )
+                scalability_fig = runner.plot_scalability_experiment(scalability_data, problem_name)
+
+                # --- Package data for UI update ---
+                ui_data = {
+                    "stats_list": stats_list,
+                    "problem_name": problem_name,
+                    "dim": base_dim,
+                    "scalability_fig": scalability_fig
+                }
+                self.after(0, self._update_ui_with_results, "continuous", ui_data, result_texts)
 
         except Exception as e:
-            error_msg = f"Error running experiment:\n{str(e)}"
+            import traceback
+            traceback_str = traceback.format_exc()
+            print(traceback_str) # Print full traceback to console
+            error_msg = f"Error running experiment:\n{str(e)}\n\nCheck console for details."
             self.after(0, self._show_error, error_msg)
         finally:
             self.after(0, self._experiment_complete)
@@ -545,7 +785,11 @@ class App(customtkinter.CTk):
         convergence += f"{'='*40}\n\n"
         
         for name, stats in metrics.items():
-            history = stats['results'][0].get('history', [])
+            result = stats['results'][0]
+            if isinstance(result, dict):
+                history = result.get('history', [])
+            else:
+                history = getattr(result, 'history', [])
             if history:
                 # Calculate convergence metrics
                 initial = history[0]
@@ -642,8 +886,7 @@ class App(customtkinter.CTk):
         complexity += f"{'─'*40}\n"
         complexity += f"Current: {dim}D problem\n"
         complexity += f"Tested:  {n_runs} runs\n\n"
-        complexity += f"Population-based methods\nscale linearly with dim.\n"
-        complexity += f"FA has higher cost due to\npairwise comparisons."
+        complexity += f"See Scalability tab for\ndetailed dimension analysis."
         
         return {
             'summary': summary,
@@ -652,48 +895,77 @@ class App(customtkinter.CTk):
             'complexity': complexity
         }
 
-    def _update_ui_with_results(self, experiment_type, data, result_texts):
+    def _update_ui_with_results(self, experiment_type, ui_data, result_texts):
         """Update UI with experiment results (called in main thread)."""
         runner = GuiExperimentRunner()
+
+        # Store the formatted text results first
+        self.result_texts = result_texts
+        
         if experiment_type == "tsp":
-            cities, results = data
-            self.fig = runner.plot_tsp_experiment(cities, results)
-        else:  # continuous
-            stats_list, problem_name, dim = data
-            self.fig = runner.plot_continuous_experiment(stats_list, problem_name, dim)
-
-        # Remove placeholder if it exists
-        if self.placeholder_label.winfo_exists():
-            self.placeholder_label.destroy()
+            cities, results = ui_data["cities"], ui_data["results"]
+            algorithms = ui_data.get("algorithms", {})
+            max_iter = ui_data.get("max_iter", 100)
+            n_cities = ui_data.get("n_cities", 20)
             
-        # Clear old canvas
-        if self.canvas:
-            self.canvas.get_tk_widget().destroy()
+            # Convergence view shows the route plot
+            tsp_fig = runner.plot_tsp_experiment(cities, results)
+            self.metric_data['convergence'] = tsp_fig
+            
+            # Generate plots for other metrics
+            complexity_fig = runner.plot_tsp_complexity(results)
+            self.metric_data['complexity'] = complexity_fig
+            
+            robustness_fig = runner.plot_tsp_robustness(results)
+            self.metric_data['robustness'] = robustness_fig
+            
+            # Scalability analysis (will take time)
+            self.update_status("Generating scalability plot...", ("orange", "orange"))
+            city_counts = [10, 15, 20, 25, 30]
+            scalability_fig = runner.plot_tsp_scalability(algorithms, max_iter, city_counts)
+            self.metric_data['scalability'] = scalability_fig
+            
+            # Enable all buttons for TSP
+            self.scalability_button.configure(state="normal")
+        else:  # continuous
+            stats_list = ui_data["stats_list"]
+            # Enable scalability button for continuous problems
+            self.scalability_button.configure(state="normal")
+            problem_name = ui_data["problem_name"]
+            dim = ui_data["dim"]
+            
+            # Enable scalability button for continuous problems
+            self.scalability_button.configure(state="normal")
+            
+            # Generate and assign plots
+            conv_robust_figs = runner.plot_continuous_experiment(stats_list, problem_name, dim)
+            self.metric_data['convergence'] = conv_robust_figs['convergence']
+            self.metric_data['robustness'] = conv_robust_figs['robustness']
+            
+            complexity_fig = runner.plot_complexity_experiment(stats_list, problem_name, dim)
+            self.metric_data['complexity'] = complexity_fig
+            
+            self.metric_data['scalability'] = ui_data["scalability_fig"]
 
-        # Update all textboxes
-        self.summary_textbox.delete("0.0", "end")
-        self.summary_textbox.insert("0.0", result_texts['summary'])
-        
-        self.convergence_textbox.delete("0.0", "end")
-        self.convergence_textbox.insert("0.0", result_texts['convergence'])
-        
-        self.robustness_textbox.delete("0.0", "end")
-        self.robustness_textbox.insert("0.0", result_texts['robustness'])
-        
-        self.complexity_textbox.delete("0.0", "end")
-        self.complexity_textbox.insert("0.0", result_texts['complexity'])
+        # Set main_fig to the convergence plot for the save button, as a default
+        self.main_fig = self.metric_data['convergence']
 
-        # Display new figure
-        self.canvas = FigureCanvasTkAgg(self.fig, master=self.main_frame)
-        self.canvas.draw()
-        self.canvas.get_tk_widget().pack(side=tkinter.TOP, fill=tkinter.BOTH, expand=1)
+        # Refresh the current view to show the new data
+        self.show_metric_view(self.current_metric_view)
+
+        # Re-enable the save button as a figure is now available
+        self.save_button.configure(state="normal")
 
     def _show_error(self, error_msg):
         """Show error message (called in main thread)."""
-        for textbox in [self.summary_textbox, self.convergence_textbox, 
-                       self.robustness_textbox, self.complexity_textbox]:
-            textbox.delete("0.0", "end")
-            textbox.insert("0.0", f"❌ ERROR\n\n{error_msg}")
+        error_text = f"❌ ERROR\n\n{error_msg}"
+        self.metric_data = {
+            'convergence': error_text,
+            'complexity': error_text,
+            'robustness': error_text,
+            'scalability': error_text,
+        }
+        self.show_metric_view(self.current_metric_view)
         self.update_status("Error occurred", ("red", "red"))
 
     def _experiment_complete(self):
@@ -792,8 +1064,20 @@ class App(customtkinter.CTk):
             self.n_runs_entry.grid(row=5, column=0, padx=0, pady=(0, 10), sticky="ew")
 
     def save_figure(self):
-        """Save the current figure to a file."""
-        if self.fig:
+        """Save the currently viewed figure to a file."""
+        fig_to_save = None
+        
+        # Get the data for the current view
+        data = self.metric_data.get(self.current_metric_view)
+        
+        # Check if it's a figure
+        if isinstance(data, plt.Figure):
+            fig_to_save = data
+        # If not, fall back to main_fig (which is the convergence plot)
+        elif isinstance(self.main_fig, plt.Figure):
+             fig_to_save = self.main_fig
+
+        if fig_to_save:
             filepath = tkinter.filedialog.asksaveasfilename(
                 defaultextension=".png",
                 filetypes=[
@@ -801,13 +1085,14 @@ class App(customtkinter.CTk):
                     ("PDF files", "*.pdf"),
                     ("SVG files", "*.svg"),
                     ("All files", "*.*")
-                ]
+                ],
+                title=f"Save {self.current_metric_view.capitalize()} Plot"
             )
             if filepath:
-                self.fig.savefig(filepath, dpi=300, bbox_inches='tight')
+                fig_to_save.savefig(filepath, dpi=300, bbox_inches='tight')
                 self.update_status(f"Saved to {os.path.basename(filepath)} ✓", ("green", "green"))
         else:
-            self.update_status("No figure to save", ("orange", "orange"))
+            self.update_status("No figure to save for current view", ("orange", "orange"))
 
 
 if __name__ == "__main__":
