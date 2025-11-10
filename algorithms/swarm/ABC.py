@@ -232,12 +232,13 @@ class ABC(PopulationBasedOptimizer):
 
 def run_abc(objective_func: Callable, dim: int, bounds: Tuple[float, float],
            n_bees: int = 30, max_iter: int = 100, limit: int = None,
+           modification_rate: float = 1.0,
            minimize: bool = True, seed: Optional[int] = None) -> dict:
     """
     Convenience function to run ABC
     
     Returns dictionary for backward compatibility
     """
-    abc = ABC(n_bees=n_bees, limit=limit, seed=seed)
+    abc = ABC(n_bees=n_bees, limit=limit, modification_rate=modification_rate, seed=seed)
     result = abc.optimize(objective_func, dim, bounds, max_iter, minimize)
     return result.to_dict()

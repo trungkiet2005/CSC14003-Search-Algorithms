@@ -232,6 +232,7 @@ class GeneticAlgorithm(PopulationBasedOptimizer):
 def run_ga(objective_func: Callable, dim: int, bounds: Tuple[float, float],
           pop_size: int = 50, max_iter: int = 100,
           crossover_rate: float = 0.8, mutation_rate: float = 0.1,
+          tournament_size: int = 3, elitism_ratio: float = 0.1,
           minimize: bool = True, seed: Optional[int] = None) -> dict:
     """
     Convenience function to run Genetic Algorithm
@@ -242,6 +243,8 @@ def run_ga(objective_func: Callable, dim: int, bounds: Tuple[float, float],
         pop_size=pop_size, 
         crossover_rate=crossover_rate,
         mutation_rate=mutation_rate,
+        tournament_size=tournament_size,
+        elitism_ratio=elitism_ratio,
         seed=seed
     )
     result = ga.optimize(objective_func, dim, bounds, max_iter, minimize)

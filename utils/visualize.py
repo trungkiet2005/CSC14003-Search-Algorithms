@@ -73,7 +73,7 @@ def plot_convergence_comparison(histories_dict: Dict[str, List[float]],
         if save_path:
             plt.savefig(save_path, bbox_inches='tight', dpi=300)
             print(f"Saved: {save_path}")
-        plt.show()
+        # plt.show()
 
 
 def plot_boxplot_comparison(data_dict: Dict[str, List[float]],
@@ -135,7 +135,7 @@ def plot_boxplot_comparison(data_dict: Dict[str, List[float]],
         if save_path:
             plt.savefig(save_path, bbox_inches='tight', dpi=300)
             print(f"Saved: {save_path}")
-        plt.show()
+        # plt.show()
 
 
 def plot_3d_surface(func: Callable, bounds: Tuple[float, float],
@@ -202,7 +202,7 @@ def plot_3d_surface(func: Callable, bounds: Tuple[float, float],
         plt.savefig(save_path, bbox_inches='tight', dpi=300)
         print(f"Saved: {save_path}")
     
-    plt.show()
+    # plt.show()
 
 
 def plot_contour(func: Callable, bounds: Tuple[float, float],
@@ -274,7 +274,7 @@ def plot_contour(func: Callable, bounds: Tuple[float, float],
         plt.savefig(save_path, bbox_inches='tight', dpi=300)
         print(f"Saved: {save_path}")
     
-    plt.show()
+    # plt.show()
 
 
 def plot_tsp_route(cities: np.ndarray, route: list, distance: float,
@@ -347,7 +347,7 @@ def plot_tsp_route(cities: np.ndarray, route: list, distance: float,
         if save_path:
             plt.savefig(save_path, bbox_inches='tight', dpi=300)
             print(f"Saved: {save_path}")
-        plt.show()
+        # plt.show()
 
 
 def plot_parameter_sensitivity(param_values: List, 
@@ -355,7 +355,8 @@ def plot_parameter_sensitivity(param_values: List,
                                std_fitness: List[float],
                                param_name: str,
                                title: str = "Parameter Sensitivity Analysis",
-                               save_path: Optional[str] = None) -> None:
+                               save_path: Optional[str] = None,
+                               ax: Optional[plt.Axes] = None) -> None:
     """
     Plot parameter sensitivity analysis
     
@@ -366,9 +367,14 @@ def plot_parameter_sensitivity(param_values: List,
         param_name: Name of the parameter
         title: Plot title
         save_path: Path to save figure
+        ax: Matplotlib axes
     """
-    fig, ax = plt.subplots(figsize=(12, 7))
-    
+    if ax is None:
+        fig, ax = plt.subplots(figsize=(12, 7))
+        show_plot = True
+    else:
+        show_plot = False
+
     # Plot mean with error bars
     ax.errorbar(param_values, mean_fitness, yerr=std_fitness,
                marker='o', markersize=8, linewidth=2,
@@ -381,13 +387,13 @@ def plot_parameter_sensitivity(param_values: List,
     ax.grid(True, alpha=0.3, linestyle='--')
     ax.legend(fontsize=11)
     
-    plt.tight_layout()
+    if show_plot:
+        plt.tight_layout()
+        if save_path:
+            plt.savefig(save_path, bbox_inches='tight', dpi=300)
+            print(f"Saved: {save_path}")
     
-    if save_path:
-        plt.savefig(save_path, bbox_inches='tight', dpi=300)
-        print(f"Saved: {save_path}")
-    
-    plt.show()
+    # plt.show()
 
 
 def plot_comparison_table(df: pd.DataFrame, 
@@ -454,7 +460,7 @@ def plot_comparison_table(df: pd.DataFrame,
         plt.savefig(save_path, bbox_inches='tight', dpi=300)
         print(f"Saved: {save_path}")
     
-    plt.show()
+    # plt.show()
 
 
 def plot_scalability_comparison(scalability_data: Dict[str, Dict[str, List]],

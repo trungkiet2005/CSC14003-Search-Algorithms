@@ -1,0 +1,155 @@
+import numpy as np
+import time
+from typing import Dict, List, Tuple
+
+# Import algorithms
+from algorithms.swarm.PSO import run_pso
+from algorithms.swarm.ABC import run_abc
+from algorithms.swarm.FA import run_fa
+from algorithms.swarm.CS import run_cs
+from algorithms.traditional.simulated_annealing import run_simulated_annealing, run_simulated_annealing_tsp
+from algorithms.traditional.genetic_algorithm import run_ga
+from algorithms.traditional.hill_climbing import run_hill_climbing
+
+# Import problems
+from problems.continuous import get_problem
+from problems.tsp import create_tsp_problem
+
+# Import utilities
+from utils.benchmark import BenchmarkRunner
+
+class ComparisonRunner:
+    """Runner for algorithm comparison - computation only."""
+    
+    def __init__(self, seed: int = 42):
+        self.seed = seed
+        self.benchmark_runner = BenchmarkRunner(seed=seed, verbose=False)
+        
+    def run_continuous_comparison(self, problem: str, dim: int, max_iter: int,
+                                  n_runs: int, algos: List[str], algo_params: Dict = None,
+                                  progress_callback=None) -> Dict:
+        """Run comparison for continuous optimization and return raw data."""
+        if algo_params is None:
+            algo_params = {}
+            
+        problem_func, problem_info = get_problem(problem, dim)
+        bounds = problem_info['bounds']
+        
+        func_map = {
+            'PSO': run_pso, 'HC': run_hill_climbing, 'ABC': run_abc, 'GA': run_ga,
+            'FA': run_fa, 'SA': run_simulated_annealing, 'CS': run_cs
+        }
+        
+        algo_dict = {
+            name: (func_map[name], {'dim': dim, 'bounds': bounds, 'max_iter': max_iter, **algo_params.get(name, {})})
+            for name in algos
+        }
+        
+        if progress_callback: progress_callback("Running main benchmark...")
+        _, stats_list = self.benchmark_runner.compare_algorithms(
+            algo_dict, problem_func, problem, dim, n_runs=n_runs
+        )
+        
+        if progress_callback: progress_callback("Analyzing scalability...")
+        scalability_data = self._get_scalability_data(algo_dict, problem, max_iter, n_runs)
+        
+        return {
+            'stats_list': stats_list,
+            'scalability_data': scalability_data,
+            'metadata': {'problem': problem, 'dim': dim}
+        }
+    
+    def run_tsp_comparison(self, n_cities: int, max_iter: int, n_runs: int = 1, 
+                           algo_params: Dict = None, progress_callback=None) -> Dict:
+        """Run comparison for TSP and return raw data."""
+        if algo_params is None:
+            algo_params = {}
+            
+        tsp = create_tsp_problem(n_cities, seed=self.seed)
+        
+        from algorithms.swarm.ACO import run_aco
+        
+        algorithms = {
+            'ACO': (run_aco, algo_params.get('ACO', {})),
+            'SA': (run_simulated_annealing_tsp, algo_params.get('SA', {}))
+        }
+        
+        if progress_callback: progress_callback("Running TSP algorithms...")
+        results = {}
+        for algo_name, (algo_func, user_params) in algorithms.items():
+            fitnesses, times, best_result, best_distance = [], [], None, float('inf')
+
+            for run in range(n_runs):
+                start = time.time()
+                run_params = {'max_iter': max_iter, 'seed': self.seed + run, **user_params}
+                
+                result = algo_func(tsp['distance_matrix'], **run_params) if 'distance_matrix' in algo_func.__code__.co_varnames else algo_func(tsp['objective'], **run_params)
+                
+                distance = result['best_distance']
+                fitnesses.append(distance)
+                times.append(time.time() - start)
+
+                if distance < best_distance:
+                    best_distance = distance
+                    best_result = result
+            
+            results[algo_name] = {
+                'mean_distance': np.mean(fitnesses), 'std_distance': np.std(fitnesses),
+                'best_distance': np.min(fitnesses), 'mean_time': np.mean(times),
+                'best_result': best_result, 'all_distances': fitnesses,
+                'best_route': best_result['best_route']
+            }
+        
+        if progress_callback: progress_callback("Analyzing TSP scalability...")
+        scalability_data = self._get_tsp_scalability_data(algorithms, max_iter)
+        
+        return {
+            'main_results': results,
+            'scalability_data': scalability_data,
+            'metadata': {'cities': tsp['cities'], 'n_cities': n_cities}
+        }
+    
+    def _get_scalability_data(self, algo_dict, problem, max_iter, n_runs):
+        """Get scalability analysis data."""
+        dims = [5, 10, 20, 30, 50]
+        scalability_data = {name: {'dims': [], 'fitness': [], 'times': []} for name in algo_dict.keys()}
+        
+        for dim in dims:
+            problem_func, problem_info = get_problem(problem, dim)
+            bounds = problem_info['bounds']
+            
+            test_algo_dict = {
+                name: (func, {**params, 'dim': dim, 'bounds': bounds, 'max_iter': max_iter})
+                for name, (func, params) in algo_dict.items()
+            }
+            
+            _, stats_list = self.benchmark_runner.compare_algorithms(
+                test_algo_dict, problem_func, problem, dim, n_runs=n_runs
+            )
+            
+            for stats in stats_list:
+                scalability_data[stats.algorithm_name]['dims'].append(dim)
+                scalability_data[stats.algorithm_name]['fitness'].append(stats.best_fitness)
+                scalability_data[stats.algorithm_name]['times'].append(stats.mean_time)
+                
+        return scalability_data
+
+    def _get_tsp_scalability_data(self, algorithms, max_iter):
+        """Get TSP scalability data."""
+        city_counts = [10, 15, 20, 25, 30]
+        scalability_data = {name: {'cities': [], 'distances': [], 'times': []} for name in algorithms.keys()}
+        
+        for n_cities in city_counts:
+            tsp = create_tsp_problem(n_cities, seed=self.seed)
+            
+            for algo_name, (algo_func, base_params) in algorithms.items():
+                start = time.time()
+                run_params = {**base_params, 'max_iter': max_iter, 'seed': self.seed}
+                
+                result = algo_func(tsp['distance_matrix'], **run_params) if 'distance_matrix' in algo_func.__code__.co_varnames else algo_func(tsp['objective'], **run_params)
+                
+                scalability_data[algo_name]['cities'].append(n_cities)
+                scalability_data[algo_name]['distances'].append(result['best_distance'])
+                scalability_data[algo_name]['times'].append(time.time() - start)
+                
+        return scalability_data
