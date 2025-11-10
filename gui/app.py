@@ -4,7 +4,7 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
 import sys
 
-from .comparison.comparison_tab_new import ComparisonTab
+from .comparison.comparison_tab import ComparisonTab
 from .visualization.visualization_tab import VisualizationTab
 
 

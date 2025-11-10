@@ -47,9 +47,6 @@ ALGO_SPECIFIC_PARAMS = {
     }
 }
 
-
-
-
 class WorkerThread(QThread):
     progress = pyqtSignal(str)
     finished = pyqtSignal(object)
