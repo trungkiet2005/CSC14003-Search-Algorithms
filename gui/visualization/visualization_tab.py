@@ -54,7 +54,7 @@ class WorkerThread(QThread):
     error = pyqtSignal(str)
     cancelled = pyqtSignal()
     
-    def __init__(self, algorithm, problem, dim, max_iter, n_runs, algo_params):
+    def __init__(self, algorithm, problem, dim, max_iter, n_runs, algo_params, seed):
         super().__init__()
         self.algorithm = algorithm
         self.problem = problem
@@ -62,6 +62,7 @@ class WorkerThread(QThread):
         self.max_iter = max_iter
         self.n_runs = n_runs
         self.algo_params = algo_params
+        self.seed = seed
         self.cancel_flag = False
         
     def run(self):
@@ -71,7 +72,7 @@ class WorkerThread(QThread):
                     raise KeyboardInterrupt("User cancelled")
                 self.progress.emit(msg)
             
-            runner = VisualizationRunner(seed=42)
+            runner = VisualizationRunner(seed=self.seed)
             results = runner.run_visualization_analysis(
                 self.algorithm, self.problem, self.dim, self.max_iter, 
                 self.n_runs, self.algo_params, {}, progress_callback
@@ -104,6 +105,7 @@ class VisualizationTab:
         self.specific_param_entries = {}
         self.spinner_running = False
         self.worker = None
+        self.problem_seeds = {}
         
         # Setup layout
         layout = QHBoxLayout(parent)
@@ -220,6 +222,12 @@ class VisualizationTab:
         self.cancel_button.hide()
         layout.addWidget(self.cancel_button)
         
+        # Add a reset seed button
+        self.reset_seed_button = QPushButton("🔄 Reset Seed")
+        self.reset_seed_button.clicked.connect(self._reset_seed)
+        self._style_button(self.reset_seed_button, "#555555", "#666666")
+        layout.addWidget(self.reset_seed_button)
+
         self.save_button = QPushButton("💾 Export All")
         self.save_button.clicked.connect(self.save_all_figures)
         self._style_button(self.save_button, "#555555", "#666666")
@@ -666,6 +674,7 @@ class VisualizationTab:
         self.dim_entry.setEnabled(False)
         self.iter_entry.setEnabled(False)
         self.runs_entry.setEnabled(False)
+        self.reset_seed_button.setEnabled(False)
         for entry in self.specific_param_entries.values():
             entry.setEnabled(False)
             
@@ -675,6 +684,7 @@ class VisualizationTab:
         self.dim_entry.setEnabled(True)
         self.iter_entry.setEnabled(True)
         self.runs_entry.setEnabled(True)
+        self.reset_seed_button.setEnabled(True)
         for entry in self.specific_param_entries.values():
             entry.setEnabled(True)
             
@@ -710,6 +720,13 @@ class VisualizationTab:
         max_iter = int(self.iter_entry.text() or 100)
         n_runs = int(self.runs_entry.text() or 10)
         
+        # Get or create seed for the problem
+        problem_key = f"{problem}_{dim}"
+        if problem_key not in self.problem_seeds:
+            self.problem_seeds[problem_key] = np.random.randint(0, 2**31 - 1)
+        seed = self.problem_seeds[problem_key]
+        self.update_progress(f"Using seed {seed} for {problem.capitalize()} (dim={dim})")
+
         algo_params = {}
         for name, entry in self.specific_param_entries.items():
             val_str = entry.text()
@@ -725,7 +742,7 @@ class VisualizationTab:
         problem_params = {}
         
         # Create and start worker thread
-        self.worker = WorkerThread(algorithm, problem, dim, max_iter, n_runs, algo_params)
+        self.worker = WorkerThread(algorithm, problem, dim, max_iter, n_runs, algo_params, seed)
         self.worker.progress.connect(self.update_progress)
         self.worker.finished.connect(self._update_ui_with_results)
         self.worker.error.connect(self._show_error)
@@ -744,6 +761,16 @@ class VisualizationTab:
         self.update_status("Cancelling...", "#FF6B6B")
         self.cancel_button.setEnabled(False)
         
+    def _reset_seed(self):
+        problem = self.problem_menu.currentText().lower()
+        dim = int(self.dim_entry.text() or 10)
+        problem_key = f"{problem}_{dim}"
+        if problem_key in self.problem_seeds:
+            del self.problem_seeds[problem_key]
+            self.update_status(f"Seed reset for {problem.capitalize()} (dim={dim})", "#00D9A5")
+        else:
+            self.update_status(f"No seed to reset for {problem.capitalize()} (dim={dim})", "#FFD166")
+
     def _clear_figures(self):
         for fig in self.generated_figures.values():
             plt.close(fig)

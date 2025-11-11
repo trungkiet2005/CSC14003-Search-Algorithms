@@ -122,7 +122,9 @@ class PopulationBasedOptimizer(ContinuousOptimizer):
     
     def _initialize_population(self, dim: int, 
                               lower: float, upper: float) -> np.ndarray:
-        """Initialize population randomly"""
+        """
+        Initialize population.
+        """
         return self.rng.uniform(lower, upper, (self.population_size, dim))
     
     def _evaluate_population(self, population: np.ndarray,

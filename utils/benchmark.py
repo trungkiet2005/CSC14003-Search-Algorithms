@@ -69,6 +69,7 @@ class BenchmarkRunner:
                              objective_func: Callable,
                              n_runs: int = 30,
                              minimize: bool = True,
+                             seeds: Optional[List[int]] = None,
                              **kwargs) -> Dict[str, Any]:
         """
         Run algorithm multiple times and collect statistics
@@ -78,6 +79,7 @@ class BenchmarkRunner:
             objective_func: Objective function
             n_runs: Number of independent runs
             minimize: True for minimization
+            seeds: Optional list of seeds for reproducibility across algorithms
             **kwargs: Arguments for algorithm
             
         Returns:
@@ -92,8 +94,11 @@ class BenchmarkRunner:
         iterator = tqdm(range(n_runs), desc="Running") if self.verbose else range(n_runs)
         
         for run in iterator:
-            # Generate unique seed for this run
-            run_seed = self.rng.integers(0, 2**31 - 1)
+            # Use provided seed if available, otherwise generate a unique seed for this run
+            if seeds is not None and len(seeds) == n_runs:
+                run_seed = seeds[run]
+            else:
+                run_seed = self.rng.integers(0, 2**31 - 1)
             
             # Trace memory and time
             tracemalloc.start()
@@ -181,6 +186,9 @@ class BenchmarkRunner:
         """
         all_stats = []
         
+        # Generate a list of seeds to be used for all algorithms to ensure fair comparison
+        run_seeds = self.rng.integers(0, 2**31 - 1, size=n_runs)
+        
         for algo_name, (algo_func, algo_kwargs) in algorithms.items():
             if self.verbose:
                 print(f"\n{'='*60}")
@@ -192,7 +200,7 @@ class BenchmarkRunner:
             
             # Run experiments
             stats = self.run_single_experiment(
-                algo_func, objective_func, n_runs, minimize, **run_kwargs
+                algo_func, objective_func, n_runs, minimize, seeds=run_seeds, **run_kwargs
             )
             
             # Create stats object

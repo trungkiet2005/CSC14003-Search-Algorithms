@@ -26,10 +26,11 @@ class ComparisonWorker(QThread):
     error = pyqtSignal(str)
     cancelled = pyqtSignal()
     
-    def __init__(self, experiment, params):
+    def __init__(self, experiment, params, seed):
         super().__init__()
         self.experiment = experiment
         self.params = params
+        self.seed = seed
         self.cancel_flag = False
         
     def run(self):
@@ -39,7 +40,7 @@ class ComparisonWorker(QThread):
                     raise KeyboardInterrupt("User cancelled")
                 self.progress.emit(msg)
             
-            runner = ComparisonRunner(seed=42)
+            runner = ComparisonRunner(seed=self.seed)
             
             if "TSP" in self.experiment:
                 results = runner.run_tsp_comparison(
@@ -87,6 +88,7 @@ class ComparisonTab:
         self.param_entries = {}
         self.spinner_running = False
         self.worker = None
+        self.problem_seeds = {}
         
         # Setup layout
         layout = QHBoxLayout(parent)
@@ -180,6 +182,11 @@ class ComparisonTab:
         self.cancel_button.hide()
         layout.addWidget(self.cancel_button)
         
+        self.reset_seed_button = QPushButton("🔄 Reset Seed")
+        self.reset_seed_button.clicked.connect(self._reset_seed)
+        self._style_button(self.reset_seed_button, "#555555", "#666666")
+        layout.addWidget(self.reset_seed_button)
+
         self.save_button = QPushButton("💾 Export All")
         self.save_button.clicked.connect(self.save_all_figures)
         self._style_button(self.save_button, "#555555", "#666666")
@@ -685,11 +692,13 @@ class ComparisonTab:
         
     def _disable_inputs(self):
         self.comparison_menu.setEnabled(False)
+        self.reset_seed_button.setEnabled(False)
         for entry in self.param_entries.values():
             entry.setEnabled(False)
             
     def _enable_inputs(self):
         self.comparison_menu.setEnabled(True)
+        self.reset_seed_button.setEnabled(True)
         for entry in self.param_entries.values():
             entry.setEnabled(True)
             
@@ -737,9 +746,11 @@ class ComparisonTab:
 
         raw_params = {key: entry.text() or entry.placeholderText() for key, entry in self.param_entries.items()}
 
+        problem_key = experiment
         if "TSP" in experiment:
             worker_params['n_cities'] = int(raw_params.get('n_cities', 20))
             algos = ['ACO', 'SA']
+            problem_key = f"tsp_{worker_params['n_cities']}"
         else:
             problem_map = { "Rastrigin": "rastrigin", "Ackley": "ackley" }
             for key, value in problem_map.items():
@@ -747,11 +758,17 @@ class ComparisonTab:
                     worker_params['problem'] = value
                     break
             worker_params['dim'] = int(raw_params.get('dim', 10))
+            problem_key = f"{worker_params['problem']}_{worker_params['dim']}"
             
             if "PSO vs HC" in experiment: algos = ['PSO', 'HC']
             elif "ABC vs GA" in experiment: algos = ['ABC', 'GA']
             elif "FA vs SA" in experiment: algos = ['FA', 'SA']
             elif "CS vs SA" in experiment: algos = ['CS', 'SA']
+
+        if problem_key not in self.problem_seeds:
+            self.problem_seeds[problem_key] = np.random.randint(0, 2**31 - 1)
+        seed = self.problem_seeds[problem_key]
+        self.update_progress(f"Using seed {seed} for {problem_key}")
 
         worker_params['max_iter'] = int(raw_params.get('max_iter', 100))
         worker_params['n_runs'] = int(raw_params.get('n_runs', 5))
@@ -767,7 +784,7 @@ class ComparisonTab:
         worker_params['algos'] = algos
         worker_params['algo_params'] = algo_params
         
-        self.worker = ComparisonWorker(experiment, worker_params)
+        self.worker = ComparisonWorker(experiment, worker_params, seed)
         self.worker.progress.connect(self.update_progress)
         self.worker.finished.connect(self._update_ui_with_results)
         self.worker.error.connect(self._show_error)
@@ -786,6 +803,28 @@ class ComparisonTab:
         self.update_status("Cancelling...", "#FF6B6B")
         self.cancel_button.setEnabled(False)
         
+    def _reset_seed(self):
+        experiment = self.comparison_menu.currentText()
+        problem_key = experiment
+        if "TSP" in experiment:
+            n_cities = int(self.param_entries['n_cities'].text() or 20)
+            problem_key = f"tsp_{n_cities}"
+        else:
+            dim = int(self.param_entries['dim'].text() or 10)
+            problem = ""
+            problem_map = { "Rastrigin": "rastrigin", "Ackley": "ackley" }
+            for key, value in problem_map.items():
+                if key in experiment:
+                    problem = value
+                    break
+            problem_key = f"{problem}_{dim}"
+
+        if problem_key in self.problem_seeds:
+            del self.problem_seeds[problem_key]
+            self.update_status(f"Seed reset for {problem_key}", "#00D9A5")
+        else:
+            self.update_status(f"No seed to reset for {problem_key}", "#FFD166")
+
     def _clear_figures(self):
         for fig in self.generated_figures.values():
             plt.close(fig)
