@@ -806,21 +806,23 @@ class VisualizationTab:
 
         saved_files = []
         for view in views_to_save:
-            fig = self.generated_figures.get(view)
-            
-            if not fig:
-                data = self.metric_data.get(view)
-                if isinstance(data, dict):
-                    temp_fig = plot_map[view](data, metadata)
-                    if temp_fig:
-                        filepath = os.path.join(output_dir, f"{view}.png")
-                        temp_fig.savefig(filepath, dpi=300, bbox_inches='tight')
-                        plt.close(temp_fig)
-                        saved_files.append(os.path.basename(filepath))
-            else:
-                filepath = os.path.join(output_dir, f"{view}.png")
-                fig.savefig(filepath, dpi=300, bbox_inches='tight')
-                saved_files.append(os.path.basename(filepath))
+            data = self.metric_data.get(view)
+            if not isinstance(data, dict):
+                continue
+
+            # Always regenerate the figure to ensure it's valid
+            fig_to_save = None
+            if view in plot_map:
+                fig_to_save = plot_map[view](data, metadata)
+
+            if fig_to_save:
+                try:
+                    filepath = os.path.join(output_dir, f"{view}.png")
+                    fig_to_save.savefig(filepath, dpi=300, bbox_inches='tight')
+                    saved_files.append(os.path.basename(filepath))
+                finally:
+                    plt.close(fig_to_save)  # Ensure figure is closed to free memory
+
 
         if saved_files:
             self.update_status(f"Exported {len(saved_files)} plots to {output_dir_str}", "#00D9A5")
