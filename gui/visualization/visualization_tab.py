@@ -1,7 +1,7 @@
 # File 2: visualization_tab.py - PyQt6 version
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, 
                               QComboBox, QLineEdit, QScrollArea, QFrame, QGridLayout,
-                              QTextEdit, QFileDialog)
+                              QTextEdit, QFileDialog, QCheckBox)
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer
 from PyQt6.QtGui import QFont
 import matplotlib.pyplot as plt
@@ -17,36 +17,10 @@ from utils.visualize import (
     plot_convergence_comparison, plot_boxplot_comparison,
     plot_parameter_sensitivity
 )
-
-ALGO_SPECIFIC_PARAMS = {
-    'PSO': {
-        'n_particles': {'label': 'Particle Count', 'default': 30, 'type': int, 'min': 5, 'max': 100},
-        'w': {'label': 'Inertia Weight', 'default': 0.7298, 'type': float, 'min': 0.1, 'max': 1.5},
-        'w_min': {'label': 'Min Inertia', 'default': 0.4, 'type': float, 'min': 0.1, 'max': 1.0},
-        'w_max': {'label': 'Max Inertia', 'default': 0.9, 'type': float, 'min': 0.1, 'max': 1.5},
-        'c1': {'label': 'Cognitive Coefficient', 'default': 1.49618, 'type': float, 'min': 0.0, 'max': 4.0},
-        'c2': {'label': 'Social Coefficient', 'default': 1.49618, 'type': float, 'min': 0.0, 'max': 4.0},
-        'v_max_ratio': {'label': 'Velocity Limit', 'default': 0.2, 'type': float, 'min': 0.05, 'max': 1.0},
-    },
-    'ABC': {
-        'n_bees': {'label': 'Colony Size', 'default': 30, 'type': int, 'min': 5, 'max': 100},
-        'limit': {'label': 'Scout Limit', 'default': None, 'type': int, 'min': 10, 'max': 1000, 'optional': True},
-        'modification_rate': {'label': 'Modification Rate', 'default': 1.0, 'type': float, 'min': 0.1, 'max': 1.0},
-    },
-    'FA': {
-        'n_fireflies': {'label': 'Population Size', 'default': 25, 'type': int, 'min': 5, 'max': 100},
-        'alpha': {'label': 'Randomness', 'default': 0.5, 'type': float, 'min': 0.01, 'max': 2.0},
-        'alpha_min': {'label': 'Min Randomness', 'default': 0.01, 'type': float, 'min': 0.001, 'max': 0.5},
-        'beta0': {'label': 'Attractiveness', 'default': 1.0, 'type': float, 'min': 0.1, 'max': 5.0},
-        'gamma': {'label': 'Absorption', 'default': 1.0, 'type': float, 'min': 0.01, 'max': 10.0},
-    },
-    'CS': {
-        'n_nests': {'label': 'Host Nests', 'default': 25, 'type': int, 'min': 5, 'max': 100},
-        'pa': {'label': 'Discovery Rate', 'default': 0.25, 'type': float, 'min': 0.0, 'max': 1.0},
-        'beta': {'label': 'Lévy Parameter', 'default': 1.5, 'type': float, 'min': 0.5, 'max': 2.5},
-        'step_size_factor': {'label': 'Step Scale', 'default': 0.01, 'type': float, 'min': 0.001, 'max': 0.5},
-    }
-}
+from config.experiment_config import (
+    PARAMETER_RANGES, ALGORITHM_UI_CONFIG, ExperimentConfig, 
+    ProblemConfig, AlgorithmConfig
+)
 
 class WorkerThread(QThread):
     progress = pyqtSignal(str)
@@ -54,14 +28,10 @@ class WorkerThread(QThread):
     error = pyqtSignal(str)
     cancelled = pyqtSignal()
     
-    def __init__(self, algorithm, problem, dim, max_iter, n_runs, algo_params, seed):
+    def __init__(self, exp_config: ExperimentConfig, sensitivity_params: list, seed: int):
         super().__init__()
-        self.algorithm = algorithm
-        self.problem = problem
-        self.dim = dim
-        self.max_iter = max_iter
-        self.n_runs = n_runs
-        self.algo_params = algo_params
+        self.exp_config = exp_config
+        self.sensitivity_params = sensitivity_params
         self.seed = seed
         self.cancel_flag = False
         
@@ -73,9 +43,9 @@ class WorkerThread(QThread):
                 self.progress.emit(msg)
             
             runner = VisualizationRunner(seed=self.seed)
+            # Pass the entire ExperimentConfig object to the runner
             results = runner.run_visualization_analysis(
-                self.algorithm, self.problem, self.dim, self.max_iter, 
-                self.n_runs, self.algo_params, {}, progress_callback
+                self.exp_config, self.sensitivity_params, progress_callback
             )
             
             if self.cancel_flag:
@@ -103,6 +73,7 @@ class VisualizationTab:
         self.metric_data = {}
         self.generated_figures = {}
         self.specific_param_entries = {}
+        self.sensitivity_param_checkboxes = {}
         self.spinner_running = False
         self.worker = None
         self.problem_seeds = {}
@@ -205,10 +176,34 @@ class VisualizationTab:
         
         self.params_layout.addWidget(self.specific_params_label)
         self.params_layout.addWidget(self.specific_params_widget)
+
+        # Sensitivity analysis parameters
+        self.sensitivity_params_label = QLabel("Sensitivity Analysis Parameters")
+        self.sensitivity_params_label.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
+        self.sensitivity_params_label.setStyleSheet("color: white; margin-top: 8px;")
+
+        self.sensitivity_params_widget = QWidget()
+        self.sensitivity_params_layout = QVBoxLayout(self.sensitivity_params_widget)
+        self.sensitivity_params_layout.setSpacing(5)
+
+        self.params_layout.addWidget(self.sensitivity_params_label)
+        self.params_layout.addWidget(self.sensitivity_params_widget)
+        
         self.params_layout.addStretch()
         
         scroll.setWidget(scroll_widget)
         layout.addWidget(scroll)
+
+        # Seed input
+        seed_label = QLabel("Experiment Seed")
+        seed_label.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
+        seed_label.setStyleSheet("color: white; margin-top: 8px;")
+        layout.addWidget(seed_label)
+
+        self.seed_entry = QLineEdit()
+        self.seed_entry.setPlaceholderText("Leave empty for random")
+        self._style_lineedit(self.seed_entry)
+        layout.addWidget(self.seed_entry)
         
         # Action buttons
         self.run_button = QPushButton("▶ Launch")
@@ -359,37 +354,55 @@ class VisualizationTab:
         if selected_algo is None:
             selected_algo = self.algo_menu.currentText()
             
-        # Clear existing widgets
-        while self.specific_params_layout.count():
-            child = self.specific_params_layout.takeAt(0)
-            if child.widget():
-                child.widget().deleteLater()
+        # Clear existing widgets from both layouts
+        for layout in [self.specific_params_layout, self.sensitivity_params_layout]:
+            while layout.count():
+                child = layout.takeAt(0)
+                if child.widget():
+                    child.widget().deleteLater()
         
         self.specific_param_entries = {}
-        params = ALGO_SPECIFIC_PARAMS.get(selected_algo, {})
-        
+        self.sensitivity_param_checkboxes = {}
+
+        # --- Populate Algorithm-specific parameters ---
+        params = ALGORITHM_UI_CONFIG.get(selected_algo, {})
         if not params:
             self.specific_params_label.hide()
             self.specific_params_widget.hide()
-            return
-            
-        self.specific_params_label.show()
-        self.specific_params_widget.show()
-        
-        for name, config in params.items():
-            label_text = config['label'] + (" (opt)" if config.get('optional') else "")
-            label = QLabel(label_text)
-            label.setFont(QFont("Segoe UI", 9))
-            label.setStyleSheet("color: white;")
-            self.specific_params_layout.addWidget(label)
-            
-            entry = QLineEdit()
-            placeholder = str(config['default']) if config['default'] is not None else "auto"
-            entry.setPlaceholderText(placeholder)
-            self._style_lineedit(entry)
-            self.specific_params_layout.addWidget(entry)
-            
-            self.specific_param_entries[name] = entry
+        else:
+            self.specific_params_label.show()
+            self.specific_params_widget.show()
+            for name, config in params.items():
+                label_text = config['label'] + (" (opt)" if config.get('optional') else "")
+                label = QLabel(label_text)
+                label.setFont(QFont("Segoe UI", 9))
+                label.setStyleSheet("color: white;")
+                self.specific_params_layout.addWidget(label)
+                
+                entry = QLineEdit()
+                placeholder = str(config['default']) if config['default'] is not None else "auto"
+                entry.setPlaceholderText(placeholder)
+                self._style_lineedit(entry)
+                self.specific_params_layout.addWidget(entry)
+                self.specific_param_entries[name] = entry
+
+        # --- Populate Sensitivity analysis parameters ---
+        sensitivity_params = PARAMETER_RANGES.get(selected_algo, {})
+        if not sensitivity_params:
+            self.sensitivity_params_label.hide()
+            self.sensitivity_params_widget.hide()
+        else:
+            self.sensitivity_params_label.show()
+            self.sensitivity_params_widget.show()
+            algo_ui_config = ALGORITHM_UI_CONFIG.get(selected_algo, {})
+            for param_name, _ in sensitivity_params.items():
+                # Get the descriptive label from ALGORITHM_UI_CONFIG, default to param_name if not found
+                label = algo_ui_config.get(param_name, {}).get('label', param_name)
+                checkbox = QCheckBox(label)
+                checkbox.setStyleSheet("color: white;")
+                self.sensitivity_params_layout.addWidget(checkbox)
+                # The key in the dictionary remains the internal parameter name
+                self.sensitivity_param_checkboxes[param_name] = checkbox
             
 
     def _create_results_area(self, parent_layout):
@@ -595,27 +608,55 @@ class VisualizationTab:
         return fig
 
     def _plot_sensitivity(self, data, metadata):
-        fig, ax = plt.subplots(figsize=(10, 6))
-        param_name = data['param_name']
-        param_values = data['param_values']
-        mean_fitness = data['mean_fitness']
-        std_fitness = data['std_fitness']
+        if not data:
+            return None
+
+        num_params = len(data)
+        if num_params == 0:
+            return None
+
+        # Determine grid size
+        cols = int(np.ceil(np.sqrt(num_params)))
+        rows = int(np.ceil(num_params / cols))
+        
+        fig, axes = plt.subplots(rows, cols, figsize=(5 * cols, 4 * rows), squeeze=False)
+        axes = axes.flatten()
+
         algo, prob = metadata['algorithm'], metadata['problem']
+        fig.suptitle(f"Sensitivity Analysis: {algo} on {prob.capitalize()}", fontsize=16, fontweight='bold')
+
+        param_names = list(data.keys())
         
-        plot_parameter_sensitivity(param_values, mean_fitness, std_fitness, 
-                                   param_name.replace('_', ' ').title(), 
-                                   title=f"Sensitivity: {algo} on {prob.capitalize()}",
-                                   ax=ax)
-        
-        best_idx = np.argmin(mean_fitness)
-        best_param, best_fitness = param_values[best_idx], mean_fitness[best_idx]
-        ax.axvline(x=best_param, color='g', linestyle='--', lw=1.5, alpha=0.7, label='Best')
-        ax.legend(fontsize=10)
-        textstr = f'Optimal: {best_param}\nFitness: {best_fitness:.4f}'
-        props = dict(boxstyle='round', facecolor='lightgreen', alpha=0.7)
-        ax.text(0.02, 0.95, textstr, transform=ax.transAxes, fontsize=10, verticalalignment='top', bbox=props)
-        
-        plt.tight_layout(pad=0.5)
+        # Get the UI config for the current algorithm
+        algo_ui_config = ALGORITHM_UI_CONFIG.get(algo, {})
+
+        for i in range(num_params):
+            param_name = param_names[i]
+            param_data = data[param_name]
+            ax = axes[i]
+
+            param_values = param_data['param_values']
+            mean_fitness = param_data['mean_fitness']
+            std_fitness = param_data['std_fitness']
+
+            # Get the descriptive label, default to a formatted version of the param_name
+            param_label = algo_ui_config.get(param_name, {}).get('label', param_name.replace('_', ' ').title())
+
+            plot_parameter_sensitivity(param_values, mean_fitness, std_fitness, 
+                                       param_label, 
+                                       title=f"Parameter: {param_label}",
+                                       ax=ax)
+            
+            best_idx = np.argmin(mean_fitness)
+            best_param, best_fitness = param_values[best_idx], mean_fitness[best_idx]
+            ax.axvline(x=best_param, color='g', linestyle='--', lw=1.5, alpha=0.7, label=f'Best: {best_param:.2f}')
+            ax.legend(fontsize=8)
+            
+        # Hide unused subplots
+        for i in range(num_params, len(axes)):
+            axes[i].set_visible(False)
+
+        plt.tight_layout(rect=[0, 0.03, 1, 0.95])
         return fig
 
     def _plot_landscape(self, data, metadata):
@@ -674,6 +715,7 @@ class VisualizationTab:
         self.dim_entry.setEnabled(False)
         self.iter_entry.setEnabled(False)
         self.runs_entry.setEnabled(False)
+        self.seed_entry.setEnabled(False)
         self.reset_seed_button.setEnabled(False)
         for entry in self.specific_param_entries.values():
             entry.setEnabled(False)
@@ -684,6 +726,7 @@ class VisualizationTab:
         self.dim_entry.setEnabled(True)
         self.iter_entry.setEnabled(True)
         self.runs_entry.setEnabled(True)
+        self.seed_entry.setEnabled(True)
         self.reset_seed_button.setEnabled(True)
         for entry in self.specific_param_entries.values():
             entry.setEnabled(True)
@@ -697,6 +740,47 @@ class VisualizationTab:
     def update_progress(self, message):
         self.progress_message.setText(message)
         
+    def _get_experiment_config(self, seed) -> ExperimentConfig:
+        """Gathers all settings from the UI and builds an ExperimentConfig object."""
+        algorithm_name = self.algo_menu.currentText()
+        problem_name = self.problem_menu.currentText().lower()
+        
+        # --- Algorithm Configuration ---
+        algo_params = {}
+        for name, entry in self.specific_param_entries.items():
+            val_str = entry.text()
+            config = ALGORITHM_UI_CONFIG[algorithm_name][name]
+            if val_str:
+                try:
+                    algo_params[name] = config['type'](val_str)
+                except (ValueError, TypeError):
+                    # Use default if conversion fails
+                    if config['default'] is not None:
+                        algo_params[name] = config['default']
+            elif config['default'] is not None:
+                algo_params[name] = config['default']
+        
+        algorithm_config = AlgorithmConfig(name=algorithm_name, params=algo_params)
+
+        # --- Problem Configuration ---
+        problem_config = ProblemConfig(
+            name=problem_name,
+            dim=int(self.dim_entry.text() or 10),
+            max_iter=int(self.iter_entry.text() or 100)
+        )
+
+        # --- Experiment Configuration ---
+        exp_config = ExperimentConfig(
+            name=f"vis_{algorithm_name}_on_{problem_name}",
+            problem=problem_config,
+            algorithms=[algorithm_config],
+            n_runs=int(self.runs_entry.text() or 10),
+            seed=seed,
+            output_dir="results/gui_runs"
+        )
+        
+        return exp_config
+
     def run_experiment(self):
         if self.is_running:
             return
@@ -713,36 +797,31 @@ class VisualizationTab:
         self._start_spinner()
         self.update_status("Running...", "#FFA500")
         
-        # Get parameters
-        algorithm = self.algo_menu.currentText()
-        problem = self.problem_menu.currentText().lower()
-        dim = int(self.dim_entry.text() or 10)
-        max_iter = int(self.iter_entry.text() or 100)
-        n_runs = int(self.runs_entry.text() or 10)
-        
-        # Get or create seed for the problem
-        problem_key = f"{problem}_{dim}"
-        if problem_key not in self.problem_seeds:
-            self.problem_seeds[problem_key] = np.random.randint(0, 2**31 - 1)
-        seed = self.problem_seeds[problem_key]
-        self.update_progress(f"Using seed {seed} for {problem.capitalize()} (dim={dim})")
+        # --- Determine Seed ---
+        problem_key = f"{self.problem_menu.currentText().lower()}_{int(self.dim_entry.text() or 10)}"
+        seed_text = self.seed_entry.text()
+        seed = None
 
-        algo_params = {}
-        for name, entry in self.specific_param_entries.items():
-            val_str = entry.text()
-            config = ALGO_SPECIFIC_PARAMS[algorithm][name]
-            if val_str:
-                try:
-                    algo_params[name] = config['type'](val_str)
-                except (ValueError, TypeError):
-                    pass
-            elif config['default'] is not None:
-                algo_params[name] = config['default']
+        if seed_text.strip().isdigit():
+            seed = int(seed_text)
+            self.update_progress(f"Using manually entered seed: {seed}")
+        else:
+            if problem_key not in self.problem_seeds:
+                self.problem_seeds[problem_key] = np.random.randint(0, 2**31 - 1)
+            seed = self.problem_seeds[problem_key]
+            self.update_progress(f"Using session seed {seed} for {problem_key.split('_')[0].capitalize()} (dim={problem_key.split('_')[1]})")
+
+        # Update the UI to show the seed being used
+        self.seed_entry.setText(str(seed))
+
+        # Create the experiment config from the UI
+        exp_config = self._get_experiment_config(seed)
         
-        problem_params = {}
+        # Get sensitivity analysis parameters
+        sensitivity_params = [name for name, checkbox in self.sensitivity_param_checkboxes.items() if checkbox.isChecked()]
         
         # Create and start worker thread
-        self.worker = WorkerThread(algorithm, problem, dim, max_iter, n_runs, algo_params, seed)
+        self.worker = WorkerThread(exp_config, sensitivity_params, seed)
         self.worker.progress.connect(self.update_progress)
         self.worker.finished.connect(self._update_ui_with_results)
         self.worker.error.connect(self._show_error)
@@ -762,14 +841,15 @@ class VisualizationTab:
         self.cancel_button.setEnabled(False)
         
     def _reset_seed(self):
+        self.seed_entry.clear()
         problem = self.problem_menu.currentText().lower()
         dim = int(self.dim_entry.text() or 10)
         problem_key = f"{problem}_{dim}"
         if problem_key in self.problem_seeds:
             del self.problem_seeds[problem_key]
-            self.update_status(f"Seed reset for {problem.capitalize()} (dim={dim})", "#00D9A5")
+            self.update_status(f"Seed reset for {problem.capitalize()} (dim={dim}). New seed will be generated.", "#00D9A5")
         else:
-            self.update_status(f"No seed to reset for {problem.capitalize()} (dim={dim})", "#FFD166")
+            self.update_status("Seed cleared. New seed will be generated.", "#FFD166")
 
     def _clear_figures(self):
         for fig in self.generated_figures.values():

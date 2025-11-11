@@ -17,6 +17,7 @@ from problems.tsp import create_tsp_problem
 
 # Import utilities
 from utils.benchmark import BenchmarkRunner
+from config.experiment_config import ExperimentConfig
 
 class ComparisonRunner:
     """Runner for algorithm comparison - computation only."""
@@ -25,14 +26,11 @@ class ComparisonRunner:
         self.seed = seed
         self.benchmark_runner = BenchmarkRunner(seed=seed, verbose=False)
         
-    def run_continuous_comparison(self, problem: str, dim: int, max_iter: int,
-                                  n_runs: int, algos: List[str], algo_params: Dict = None,
-                                  progress_callback=None) -> Dict:
+    def run_continuous_comparison(self, exp_config: ExperimentConfig, progress_callback=None) -> Dict:
         """Run comparison for continuous optimization and return raw data."""
-        if algo_params is None:
-            algo_params = {}
-            
-        problem_func, problem_info = get_problem(problem, dim)
+        problem_config = exp_config.problem
+        
+        problem_func, problem_info = get_problem(problem_config.name, problem_config.dim)
         bounds = problem_info['bounds']
         
         func_map = {
@@ -40,23 +38,33 @@ class ComparisonRunner:
             'FA': run_fa, 'SA': run_simulated_annealing, 'CS': run_cs
         }
         
-        algo_dict = {
-            name: (func_map[name], {'dim': dim, 'bounds': bounds, 'max_iter': max_iter, **algo_params.get(name, {})})
-            for name in algos
-        }
-        
+        # Create the dictionary of algorithms to be compared from the ExperimentConfig
+        algo_dict = {}
+        for algo_config in exp_config.algorithms:
+            if algo_config.enabled:
+                params = {
+                    'dim': problem_config.dim,
+                    'bounds': bounds,
+                    'max_iter': problem_config.max_iter,
+                    **algo_config.params
+                }
+                algo_dict[algo_config.name] = (func_map[algo_config.name], params)
+
         if progress_callback: progress_callback("Running main benchmark...")
         _, stats_list = self.benchmark_runner.compare_algorithms(
-            algo_dict, problem_func, problem, dim, n_runs=n_runs
+            algo_dict, problem_func, problem_config.name, problem_config.dim, 
+            n_runs=exp_config.n_runs, progress_callback=progress_callback
         )
         
-        if progress_callback: progress_callback("Analyzing scalability...")
-        scalability_data = self._get_scalability_data(algo_dict, problem, max_iter, n_runs)
+        scalability_data = self._get_scalability_data(
+            algo_dict, problem_config.name, problem_config.max_iter, exp_config.n_runs,
+            progress_callback
+        )
         
         return {
             'stats_list': stats_list,
             'scalability_data': scalability_data,
-            'metadata': {'problem': problem, 'dim': dim}
+            'metadata': {'problem': problem_config.name, 'dim': problem_config.dim}
         }
     
     def run_tsp_comparison(self, n_cities: int, max_iter: int, n_runs: int = 1, 
@@ -74,12 +82,15 @@ class ComparisonRunner:
             'SA': (run_simulated_annealing_tsp, algo_params.get('SA', {}))
         }
         
-        if progress_callback: progress_callback("Running TSP algorithms...")
         results = {}
-        for algo_name, (algo_func, user_params) in algorithms.items():
+        total_algos = len(algorithms)
+        for i, (algo_name, (algo_func, user_params)) in enumerate(algorithms.items()):
             fitnesses, times, best_result, best_distance = [], [], None, float('inf')
 
             for run in range(n_runs):
+                if progress_callback:
+                    progress_callback(f"Running {algo_name} ({i+1}/{total_algos}): Run {run + 1}/{n_runs}")
+
                 start = time.time()
                 run_params = {'max_iter': max_iter, 'seed': self.seed + run, **user_params}
                 
@@ -100,8 +111,7 @@ class ComparisonRunner:
                 'best_route': best_result['best_route']
             }
         
-        if progress_callback: progress_callback("Analyzing TSP scalability...")
-        scalability_data = self._get_tsp_scalability_data(algorithms, max_iter)
+        scalability_data = self._get_tsp_scalability_data(algorithms, max_iter, progress_callback)
         
         return {
             'main_results': results,
@@ -109,12 +119,16 @@ class ComparisonRunner:
             'metadata': {'cities': tsp['cities'], 'n_cities': n_cities}
         }
     
-    def _get_scalability_data(self, algo_dict, problem, max_iter, n_runs):
+    def _get_scalability_data(self, algo_dict, problem, max_iter, n_runs, progress_callback=None):
         """Get scalability analysis data."""
         dims = [5, 10, 20, 30, 50]
         scalability_data = {name: {'dims': [], 'fitness': [], 'times': []} for name in algo_dict.keys()}
         
-        for dim in dims:
+        total_dims = len(dims)
+        for i, dim in enumerate(dims):
+            if progress_callback:
+                progress_callback(f"Analyzing scalability... (dimension {dim}, {i+1}/{total_dims})")
+
             problem_func, problem_info = get_problem(problem, dim)
             bounds = problem_info['bounds']
             
@@ -123,8 +137,10 @@ class ComparisonRunner:
                 for name, (func, params) in algo_dict.items()
             }
             
+            # Pass a simplified callback to avoid nested progress messages
             _, stats_list = self.benchmark_runner.compare_algorithms(
-                test_algo_dict, problem_func, problem, dim, n_runs=n_runs
+                test_algo_dict, problem_func, problem, dim, n_runs=n_runs,
+                progress_callback=lambda msg: progress_callback(f"Scalability (dim={dim}): {msg}") if progress_callback else None
             )
             
             for stats in stats_list:
@@ -134,12 +150,16 @@ class ComparisonRunner:
                 
         return scalability_data
 
-    def _get_tsp_scalability_data(self, algorithms, max_iter):
+    def _get_tsp_scalability_data(self, algorithms, max_iter, progress_callback=None):
         """Get TSP scalability data."""
         city_counts = [10, 15, 20, 25, 30]
         scalability_data = {name: {'cities': [], 'distances': [], 'times': []} for name in algorithms.keys()}
         
-        for n_cities in city_counts:
+        total_cities = len(city_counts)
+        for i, n_cities in enumerate(city_counts):
+            if progress_callback:
+                progress_callback(f"Analyzing TSP scalability... (cities: {n_cities}, {i+1}/{total_cities})")
+
             tsp = create_tsp_problem(n_cities, seed=self.seed)
             
             for algo_name, (algo_func, base_params) in algorithms.items():

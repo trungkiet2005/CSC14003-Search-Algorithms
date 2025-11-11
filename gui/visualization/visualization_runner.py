@@ -10,6 +10,10 @@ from algorithms.swarm.CS import run_cs
 
 # Import problems
 from problems.continuous import get_problem
+from config.experiment_config import (
+    PARAMETER_RANGES, DEFAULT_PSO_CONFIG, DEFAULT_ABC_CONFIG,
+    DEFAULT_FA_CONFIG, DEFAULT_CS_CONFIG, ExperimentConfig
+)
 
 class VisualizationRunner:
     """Runner for individual algorithm visualization - computation only."""
@@ -17,14 +21,23 @@ class VisualizationRunner:
     def __init__(self, seed: int = 42):
         self.seed = seed
         
-    def run_visualization_analysis(self, algorithm: str, problem: str, 
-                                   dim: int, max_iter: int, n_runs: int,
-                                   algo_specific_params: Dict = None,
-                                   problem_specific_params: Dict = None,
+    def run_visualization_analysis(self, exp_config: ExperimentConfig,
+                                   sensitivity_params: List[str] = None,
                                    progress_callback=None) -> Dict:
         """
         Run comprehensive visualization analysis and return raw data for plotting.
         """
+        # Extract parameters from the experiment configuration
+        problem_config = exp_config.problem
+        algo_config = exp_config.algorithms[0]  # Visualization uses one algorithm
+        
+        algorithm = algo_config.name
+        problem = problem_config.name
+        dim = problem_config.dim
+        max_iter = problem_config.max_iter
+        n_runs = exp_config.n_runs
+        algo_specific_params = algo_config.params
+
         # Get algorithm function and parameters
         algo_func, algo_params = self._get_algorithm(algorithm, algo_specific_params)
         problem_func, problem_info = get_problem(problem, dim)
@@ -35,19 +48,19 @@ class VisualizationRunner:
             algo_func, algo_params, problem_func, bounds, dim, max_iter
         )
         
-        if progress_callback: progress_callback("Assessing performance...")
         performance_data = self._get_performance_data(
-            algo_func, algo_params, problem_func, bounds, dim, max_iter, n_runs
+            algo_func, algo_params, problem_func, bounds, dim, max_iter, n_runs,
+            progress_callback
         )
         
-        if progress_callback: progress_callback("Analyzing sensitivity...")
         sensitivity_data = self._get_sensitivity_data(
-            algorithm, algo_func, algo_params, problem_func, bounds, dim, max_iter
+            algorithm, algo_func, algo_params, problem_func, bounds, dim, max_iter, sensitivity_params,
+            progress_callback
         )
         
-        if progress_callback: progress_callback("Computing landscape...")
         landscape_data = self._get_landscape_data(
-            algo_func, algo_params, problem_func, bounds, max_iter
+            algo_func, algo_params, problem_func, bounds, max_iter,
+            progress_callback
         )
         
         return {
@@ -65,11 +78,11 @@ class VisualizationRunner:
     
     def _get_algorithm(self, algorithm: str, algo_specific_params: Dict = None) -> Tuple:
         """Get algorithm function and parameters, merging defaults with specific ones."""
-        default_params = {
-            'PSO': {'n_particles': 30, 'w': 0.7298, 'c1': 1.49618, 'c2': 1.49618},
-            'ABC': {'n_bees': 30},
-            'FA': {'n_fireflies': 25, 'alpha': 0.5, 'beta0': 1.0, 'gamma': 1.0},
-            'CS': {'n_nests': 25, 'pa': 0.25, 'beta': 1.5}
+        default_configs = {
+            'PSO': DEFAULT_PSO_CONFIG,
+            'ABC': DEFAULT_ABC_CONFIG,
+            'FA': DEFAULT_FA_CONFIG,
+            'CS': DEFAULT_CS_CONFIG
         }
         
         func_map = {
@@ -78,7 +91,8 @@ class VisualizationRunner:
         
         algo_func = func_map[algorithm]
         
-        params = default_params.get(algorithm, {}).copy()
+        # Use the params from the default config object
+        params = default_configs.get(algorithm).params.copy()
         if algo_specific_params:
             params.update(algo_specific_params)
             
@@ -93,7 +107,7 @@ class VisualizationRunner:
         return {'history': history}
     
     def _get_performance_data(self, algo_func, algo_params, problem_func, bounds,
-                              dim, max_iter, n_runs):
+                              dim, max_iter, n_runs, progress_callback=None):
         """2. COMPARATIVE PERFORMANCE DATA"""
         params = {'dim': dim, 'bounds': bounds, 'max_iter': max_iter, **algo_params}
         
@@ -101,6 +115,8 @@ class VisualizationRunner:
         best_fitnesses = []
         
         for run in range(n_runs):
+            if progress_callback:
+                progress_callback(f"Assessing performance... (run {run + 1}/{n_runs})")
             result = algo_func(objective_func=problem_func, seed=self.seed + run, **params)
             history = result['history'] if isinstance(result, dict) else result.history
             all_histories.append(history)
@@ -109,44 +125,77 @@ class VisualizationRunner:
         return {'all_histories': all_histories, 'best_fitnesses': best_fitnesses}
     
     def _get_sensitivity_data(self, algorithm, algo_func, algo_params, problem_func,
-                              bounds, dim, max_iter):
+                              bounds, dim, max_iter, sensitivity_params: List[str] = None,
+                              progress_callback=None):
         """3. PARAMETER SENSITIVITY ANALYSIS DATA"""
-        param_ranges = {
-            'PSO': ('n_particles', [10, 20, 30, 40, 50]),
-            'ABC': ('n_bees', [10, 20, 30, 40, 50]),
-            'FA': ('n_fireflies', [10, 15, 20, 25, 30]),
-            'CS': ('n_nests', [10, 15, 20, 25, 30])
-        }
+        if not sensitivity_params:
+            return {}
+
+        results = {}
         
-        param_name, param_values = param_ranges.get(algorithm, ('n_particles', [10, 20, 30, 40, 50]))
-        
-        mean_fitness = []
-        std_fitness = []
-        
-        for val in param_values:
-            current_algo_params = algo_params.copy()
-            current_algo_params[param_name] = val
-            params = {'dim': dim, 'bounds': bounds, 'max_iter': max_iter, **current_algo_params}
+        total_params = len(sensitivity_params)
+        for i, param_name in enumerate(sensitivity_params):
+            param_range_info = PARAMETER_RANGES.get(algorithm, {}).get(param_name)
             
-            fitnesses = []
-            for run in range(5):  # 5 runs per parameter value
-                result = algo_func(objective_func=problem_func, seed=self.seed + run, **params)
-                fitness = result['best_fitness'] if isinstance(result, dict) else result.best_fitness
-                fitnesses.append(fitness)
+            if not param_range_info:
+                continue
+
+            param_values = None
+            actual_param_name = param_name
+
+            # Special handling for limit_factor
+            if param_name == 'limit_factor' and algorithm == 'ABC':
+                if isinstance(param_range_info, list):
+                    n_bees = algo_params.get('n_bees', 30)
+                    param_values = [int(f * dim * n_bees) for f in param_range_info]
+                    actual_param_name = 'limit' # We are actually modifying the 'limit' param
+            else:
+                # Standard parameter handling
+                if isinstance(param_range_info, tuple) and len(param_range_info) == 2:
+                    param_values = np.linspace(param_range_info[0], param_range_info[1], 5)
+                    if 'n_' in param_name or 'pop_size' in param_name:
+                        param_values = np.round(param_values).astype(int)
+                elif isinstance(param_range_info, list):
+                    param_values = param_range_info
             
-            mean_fitness.append(np.mean(fitnesses))
-            std_fitness.append(np.std(fitnesses))
+            if param_values is None:
+                continue
+
+            mean_fitness = []
+            std_fitness = []
+
+            total_values = len(param_values)
+            for j, val in enumerate(param_values):
+                if progress_callback:
+                    progress_callback(
+                        f"Analyzing sensitivity for '{param_name}' ({i+1}/{total_params}): "
+                        f"value {j+1}/{total_values}"
+                    )
+                current_algo_params = algo_params.copy()
+                current_algo_params[actual_param_name] = val
+                params = {'dim': dim, 'bounds': bounds, 'max_iter': max_iter, **current_algo_params}
+                
+                fitnesses = []
+                for run in range(5):  # 5 runs per parameter value
+                    result = algo_func(objective_func=problem_func, seed=self.seed + run, **params)
+                    fitness = result['best_fitness'] if isinstance(result, dict) else result.best_fitness
+                    fitnesses.append(fitness)
+                
+                mean_fitness.append(np.mean(fitnesses))
+                std_fitness.append(np.std(fitnesses))
             
-        return {
-            'param_name': param_name,
-            'param_values': param_values,
-            'mean_fitness': mean_fitness,
-            'std_fitness': std_fitness
-        }
+            results[param_name] = {
+                'param_values': param_values,
+                'mean_fitness': mean_fitness,
+                'std_fitness': std_fitness
+            }
+            
+        return results
     
     def _get_landscape_data(self, algo_func, algo_params, problem_func, bounds,
-                            max_iter):
+                            max_iter, progress_callback=None):
         """4. 3D LANDSCAPE DATA"""
+        if progress_callback: progress_callback("Computing landscape (running algorithm)...")
         params_2d = {'dim': 2, 'bounds': bounds, 'max_iter': max_iter, **algo_params}
         result = algo_func(objective_func=problem_func, seed=self.seed, **params_2d)
         best_position = result['best_position'] if isinstance(result, dict) else result.best_position
@@ -159,6 +208,8 @@ class VisualizationRunner:
         Z = np.zeros_like(X)
         
         for i in range(resolution):
+            if progress_callback:
+                progress_callback(f"Computing landscape... (row {i + 1}/{resolution})")
             for j in range(resolution):
                 Z[i, j] = problem_func([X[i, j], Y[i, j]])
                 

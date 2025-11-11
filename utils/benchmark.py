@@ -70,6 +70,7 @@ class BenchmarkRunner:
                              n_runs: int = 30,
                              minimize: bool = True,
                              seeds: Optional[List[int]] = None,
+                             progress_callback: Optional[Callable] = None,
                              **kwargs) -> Dict[str, Any]:
         """
         Run algorithm multiple times and collect statistics
@@ -80,6 +81,7 @@ class BenchmarkRunner:
             n_runs: Number of independent runs
             minimize: True for minimization
             seeds: Optional list of seeds for reproducibility across algorithms
+            progress_callback: Optional function to report progress
             **kwargs: Arguments for algorithm
             
         Returns:
@@ -94,6 +96,11 @@ class BenchmarkRunner:
         iterator = tqdm(range(n_runs), desc="Running") if self.verbose else range(n_runs)
         
         for run in iterator:
+            if progress_callback:
+                # This message will be overridden by the parent caller's message,
+                # but it's good practice to have it.
+                progress_callback(f"Run {run + 1}/{n_runs}")
+
             # Use provided seed if available, otherwise generate a unique seed for this run
             if seeds is not None and len(seeds) == n_runs:
                 run_seed = seeds[run]
@@ -168,6 +175,7 @@ class BenchmarkRunner:
                           dimension: int,
                           n_runs: int = 30,
                           minimize: bool = True,
+                          progress_callback: Optional[Callable] = None,
                           **common_kwargs) -> pd.DataFrame:
         """
         Compare multiple algorithms on the same problem
@@ -179,6 +187,7 @@ class BenchmarkRunner:
             dimension: Problem dimensionality
             n_runs: Number of runs per algorithm
             minimize: True for minimization
+            progress_callback: Optional function to report progress
             **common_kwargs: Common parameters for all algorithms
             
         Returns:
@@ -194,13 +203,17 @@ class BenchmarkRunner:
                 print(f"\n{'='*60}")
                 print(f"Running {algo_name} on {problem_name} (dim={dimension})")
                 print(f"{'='*60}")
+
+            if progress_callback:
+                progress_callback(f"Running {algo_name} on {problem_name} (dim={dimension})")
             
             # Merge kwargs
             run_kwargs = {**common_kwargs, **algo_kwargs}
             
             # Run experiments
             stats = self.run_single_experiment(
-                algo_func, objective_func, n_runs, minimize, seeds=run_seeds, **run_kwargs
+                algo_func, objective_func, n_runs, minimize, 
+                seeds=run_seeds, progress_callback=progress_callback, **run_kwargs
             )
             
             # Create stats object

@@ -18,6 +18,9 @@ from utils.visualize import (
     plot_complexity_comparison, plot_scalability_comparison,
     plot_tsp_route
 )
+from config.experiment_config import (
+    ExperimentConfig, ProblemConfig, AlgorithmConfig
+)
 
 
 class ComparisonWorker(QThread):
@@ -26,10 +29,9 @@ class ComparisonWorker(QThread):
     error = pyqtSignal(str)
     cancelled = pyqtSignal()
     
-    def __init__(self, experiment, params, seed):
+    def __init__(self, exp_config: ExperimentConfig, seed: int):
         super().__init__()
-        self.experiment = experiment
-        self.params = params
+        self.exp_config = exp_config
         self.seed = seed
         self.cancel_flag = False
         
@@ -42,22 +44,21 @@ class ComparisonWorker(QThread):
             
             runner = ComparisonRunner(seed=self.seed)
             
-            if "TSP" in self.experiment:
+            if self.exp_config.problem.name == "tsp":
+                # The runner's TSP method is not yet refactored to use ExperimentConfig fully.
+                # We extract params for it here.
+                algo_params = {algo.name: algo.params for algo in self.exp_config.algorithms}
                 results = runner.run_tsp_comparison(
-                    self.params['n_cities'],
-                    self.params['max_iter'],
-                    self.params['n_runs'],
-                    self.params['algo_params'],
-                    progress_callback
+                    n_cities=self.exp_config.problem.dim,
+                    max_iter=self.exp_config.problem.max_iter,
+                    n_runs=self.exp_config.n_runs,
+                    algo_params=algo_params,
+                    progress_callback=progress_callback
                 )
             else:
+                # The continuous comparison method is refactored.
                 results = runner.run_continuous_comparison(
-                    self.params['problem'],
-                    self.params['dim'],
-                    self.params['max_iter'],
-                    self.params['n_runs'],
-                    self.params['algos'],
-                    self.params['algo_params'],
+                    self.exp_config,
                     progress_callback
                 )
             
@@ -169,6 +170,17 @@ class ComparisonTab:
         self.params_scroll.setWidget(self.scroll_widget)
         
         layout.addWidget(self.params_scroll)
+
+        # Seed input
+        seed_label = QLabel("Experiment Seed")
+        seed_label.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
+        seed_label.setStyleSheet("color: white; margin-top: 8px;")
+        layout.addWidget(seed_label)
+
+        self.seed_entry = QLineEdit()
+        self.seed_entry.setPlaceholderText("Leave empty for random")
+        self._style_lineedit(self.seed_entry)
+        layout.addWidget(self.seed_entry)
         
         # Action buttons
         self.run_button = QPushButton("▶ Run Benchmark")
@@ -346,7 +358,7 @@ class ComparisonTab:
             self._add_param_entry("ACO_n_ants", "Ant Population", "20")
             self._add_param_entry("ACO_alpha", "Pheromone Weight (α)", "1.0")
             self._add_param_entry("ACO_beta", "Heuristic Weight (β)", "2.0")
-            self._add_param_entry("ACO_rho", "Evaporation Rate (ρ)", "0.1")
+            self._add_param_entry("ACO_evaporation_rate", "Evaporation Rate (ρ)", "0.1")
             
             self._add_section_separator()
             self._add_section_label("Simulated Annealing")
@@ -693,12 +705,14 @@ class ComparisonTab:
     def _disable_inputs(self):
         self.comparison_menu.setEnabled(False)
         self.reset_seed_button.setEnabled(False)
+        self.seed_entry.setEnabled(False)
         for entry in self.param_entries.values():
             entry.setEnabled(False)
             
     def _enable_inputs(self):
         self.comparison_menu.setEnabled(True)
         self.reset_seed_button.setEnabled(True)
+        self.seed_entry.setEnabled(True)
         for entry in self.param_entries.values():
             entry.setEnabled(True)
             
@@ -710,6 +724,63 @@ class ComparisonTab:
 
     def update_progress(self, message):
         self.progress_message.setText(message)
+
+    def _get_experiment_config(self, seed: int) -> ExperimentConfig:
+        """Gathers settings from the UI and builds an ExperimentConfig object."""
+        experiment = self.comparison_menu.currentText()
+        raw_params = {key: entry.text() or entry.placeholderText() for key, entry in self.param_entries.items()}
+
+        def parse_value(value_str):
+            if isinstance(value_str, str) and value_str.lower() == 'auto':
+                return None
+            try:
+                value = float(value_str)
+                return int(value) if value.is_integer() else value
+            except (ValueError, TypeError):
+                return value_str
+
+        # --- Problem Configuration ---
+        if "TSP" in experiment:
+            problem_name = "tsp"
+            dim = int(raw_params.get('n_cities', 20))
+        else:
+            problem_map = {"Rastrigin": "rastrigin", "Ackley": "ackley"}
+            problem_name = next((p for k, p in problem_map.items() if k in experiment), "rastrigin")
+            dim = int(raw_params.get('dim', 10))
+
+        problem_config = ProblemConfig(
+            name=problem_name,
+            dim=dim,
+            max_iter=int(raw_params.get('max_iter', 100))
+        )
+
+        # --- Algorithm Configuration ---
+        algo_configs = []
+        algos_in_exp = []
+        if "PSO vs HC" in experiment: algos_in_exp = ['PSO', 'HC']
+        elif "ABC vs GA" in experiment: algos_in_exp = ['ABC', 'GA']
+        elif "FA vs SA" in experiment: algos_in_exp = ['FA', 'SA']
+        elif "CS vs SA" in experiment: algos_in_exp = ['CS', 'SA']
+        elif "TSP" in experiment: algos_in_exp = ['ACO', 'SA']
+
+        for algo_name in algos_in_exp:
+            params = {}
+            for key, value_str in raw_params.items():
+                if key.startswith(f"{algo_name}_"):
+                    param_name = key.split('_', 1)[1]
+                    params[param_name] = parse_value(value_str)
+            algo_configs.append(AlgorithmConfig(name=algo_name, params=params, enabled=True))
+
+        # --- Experiment Configuration ---
+        exp_config = ExperimentConfig(
+            name=experiment,
+            problem=problem_config,
+            algorithms=algo_configs,
+            n_runs=int(raw_params.get('n_runs', 5)),
+            seed=seed,
+            output_dir="results/gui_runs"
+        )
+        return exp_config
 
     def run_experiment(self):
         if self.is_running:
@@ -727,64 +798,37 @@ class ComparisonTab:
         self._start_spinner()
         self.update_status("Running...", "#FFA500")
         
+        # --- Determine Seed ---
         experiment = self.comparison_menu.currentText()
-        
-        worker_params = {}
-        algo_params = {}
-        algos = []
-
-        def parse_value(value_str):
-            if value_str.lower() == 'auto':
-                return None
-            try:
-                value = float(value_str)
-                if value.is_integer():
-                    return int(value)
-                return value
-            except ValueError:
-                return value_str
-
-        raw_params = {key: entry.text() or entry.placeholderText() for key, entry in self.param_entries.items()}
-
-        problem_key = experiment
+        problem_key = experiment # Default key
         if "TSP" in experiment:
-            worker_params['n_cities'] = int(raw_params.get('n_cities', 20))
-            algos = ['ACO', 'SA']
-            problem_key = f"tsp_{worker_params['n_cities']}"
+            n_cities_str = self.param_entries.get('n_cities').text()
+            problem_key = f"tsp_{int(n_cities_str or 20)}"
         else:
-            problem_map = { "Rastrigin": "rastrigin", "Ackley": "ackley" }
-            for key, value in problem_map.items():
-                if key in experiment:
-                    worker_params['problem'] = value
-                    break
-            worker_params['dim'] = int(raw_params.get('dim', 10))
-            problem_key = f"{worker_params['problem']}_{worker_params['dim']}"
-            
-            if "PSO vs HC" in experiment: algos = ['PSO', 'HC']
-            elif "ABC vs GA" in experiment: algos = ['ABC', 'GA']
-            elif "FA vs SA" in experiment: algos = ['FA', 'SA']
-            elif "CS vs SA" in experiment: algos = ['CS', 'SA']
+            dim_str = self.param_entries.get('dim').text()
+            prob_name_str = experiment.split('(')[1].split(')')[0]
+            problem_key = f"{prob_name_str.lower()}_{int(dim_str or 10)}"
 
-        if problem_key not in self.problem_seeds:
-            self.problem_seeds[problem_key] = np.random.randint(0, 2**31 - 1)
-        seed = self.problem_seeds[problem_key]
-        self.update_progress(f"Using seed {seed} for {problem_key}")
+        seed_text = self.seed_entry.text()
+        seed = None
 
-        worker_params['max_iter'] = int(raw_params.get('max_iter', 100))
-        worker_params['n_runs'] = int(raw_params.get('n_runs', 5))
+        if seed_text.strip().isdigit():
+            seed = int(seed_text)
+            self.update_progress(f"Using manually entered seed: {seed}")
+        else:
+            if problem_key not in self.problem_seeds:
+                self.problem_seeds[problem_key] = np.random.randint(0, 2**31 - 1)
+            seed = self.problem_seeds[problem_key]
+            self.update_progress(f"Using session seed {seed} for {problem_key}")
 
-        for key, value_str in raw_params.items():
-            if '_' in key:
-                algo_name, param_name = key.split('_', 1)
-                if algo_name in algos:
-                    if algo_name not in algo_params:
-                        algo_params[algo_name] = {}
-                    algo_params[algo_name][param_name] = parse_value(value_str)
+        # Update the UI to show the seed being used
+        self.seed_entry.setText(str(seed))
 
-        worker_params['algos'] = algos
-        worker_params['algo_params'] = algo_params
+        # Get the unified experiment config
+        exp_config = self._get_experiment_config(seed)
         
-        self.worker = ComparisonWorker(experiment, worker_params, seed)
+        # Create and start worker thread
+        self.worker = ComparisonWorker(exp_config, seed)
         self.worker.progress.connect(self.update_progress)
         self.worker.finished.connect(self._update_ui_with_results)
         self.worker.error.connect(self._show_error)
@@ -804,26 +848,22 @@ class ComparisonTab:
         self.cancel_button.setEnabled(False)
         
     def _reset_seed(self):
+        self.seed_entry.clear()
         experiment = self.comparison_menu.currentText()
-        problem_key = experiment
+        problem_key = experiment # Default key
         if "TSP" in experiment:
-            n_cities = int(self.param_entries['n_cities'].text() or 20)
-            problem_key = f"tsp_{n_cities}"
+            n_cities_str = self.param_entries.get('n_cities').text()
+            problem_key = f"tsp_{int(n_cities_str or 20)}"
         else:
-            dim = int(self.param_entries['dim'].text() or 10)
-            problem = ""
-            problem_map = { "Rastrigin": "rastrigin", "Ackley": "ackley" }
-            for key, value in problem_map.items():
-                if key in experiment:
-                    problem = value
-                    break
-            problem_key = f"{problem}_{dim}"
+            dim_str = self.param_entries.get('dim').text()
+            prob_name_str = experiment.split('(')[1].split(')')[0]
+            problem_key = f"{prob_name_str.lower()}_{int(dim_str or 10)}"
 
         if problem_key in self.problem_seeds:
             del self.problem_seeds[problem_key]
-            self.update_status(f"Seed reset for {problem_key}", "#00D9A5")
+            self.update_status(f"Seed reset for {problem_key}. New seed will be generated.", "#00D9A5")
         else:
-            self.update_status(f"No seed to reset for {problem_key}", "#FFD166")
+            self.update_status("Seed cleared. New seed will be generated.", "#FFD166")
 
     def _clear_figures(self):
         for fig in self.generated_figures.values():
