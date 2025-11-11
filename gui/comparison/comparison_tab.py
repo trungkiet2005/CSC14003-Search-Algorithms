@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.lines import Line2D
 import os
+import time
 import numpy as np
 import seaborn as sns
 
@@ -179,8 +180,8 @@ class ComparisonTab:
         self.cancel_button.hide()
         layout.addWidget(self.cancel_button)
         
-        self.save_button = QPushButton("💾 Export Chart")
-        self.save_button.clicked.connect(self.save_figure)
+        self.save_button = QPushButton("💾 Export All")
+        self.save_button.clicked.connect(self.save_all_figures)
         self._style_button(self.save_button, "#555555", "#666666")
         self.save_button.setEnabled(False)
         layout.addWidget(self.save_button)
@@ -820,19 +821,46 @@ class ComparisonTab:
         self.cancel_button.setEnabled(True)
         
         if "Cancelled" not in self.status_label.text() and "Error" not in self.status_label.text():
-            self.update_status("Benchmark Complete ✓", "#00D9A5")
+            self.update_status("Benchmark Complete", "#00D9A5")
         
-    def save_figure(self):
-        fig = self.generated_figures.get(self.current_view)
-        if fig:
-            filepath, _ = QFileDialog.getSaveFileName(
-                self.parent,
-                f"Export {self.current_view.capitalize()} Plot",
-                "",
-                "PNG Image (*.png);;PDF Document (*.pdf);;SVG Vector (*.svg);;All Files (*.*)"
-            )
-            if filepath:
+    def save_all_figures(self):
+        if not isinstance(self.metric_data.get('metadata'), dict):
+            self.update_status("No results to export", "#FFD166")
+            return
+
+        experiment_name = self.comparison_menu.currentText().replace(" ", "_").replace("(", "").replace(")", "")
+        
+        timestamp = time.strftime("%Y%m%d-%H%M%S")
+        output_dir_str = f"results/figures/comparison/{experiment_name}_{timestamp}"
+        output_dir = os.path.join(os.getcwd(), output_dir_str.replace('/', os.sep))
+        os.makedirs(output_dir, exist_ok=True)
+
+        views_to_save = ["convergence", "complexity", "robustness", "scalability"]
+        
+        plot_map = {
+            "convergence": self._plot_convergence,
+            "complexity": self._plot_complexity,
+            "robustness": self._plot_robustness,
+            "scalability": self._plot_scalability,
+        }
+
+        saved_files = []
+        for view in views_to_save:
+            fig = self.generated_figures.get(view)
+            
+            if not fig:
+                temp_fig = plot_map[view](self.metric_data)
+                if temp_fig:
+                    filepath = os.path.join(output_dir, f"{view}.png")
+                    temp_fig.savefig(filepath, dpi=300, bbox_inches='tight')
+                    plt.close(temp_fig)
+                    saved_files.append(os.path.basename(filepath))
+            else:
+                filepath = os.path.join(output_dir, f"{view}.png")
                 fig.savefig(filepath, dpi=300, bbox_inches='tight')
-                self.update_status(f"Exported: {os.path.basename(filepath)} ✓", "#00D9A5")
+                saved_files.append(os.path.basename(filepath))
+
+        if saved_files:
+            self.update_status(f"Exported {len(saved_files)} plots to {output_dir_str}", "#00D9A5")
         else:
-            self.update_status("No visualization to export", "#FFD166")
+            self.update_status("No valid plots to export", "#FFD166")
