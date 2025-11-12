@@ -8,6 +8,8 @@ from algorithms.swarm.ABC import run_abc
 from algorithms.swarm.FA import run_fa
 from algorithms.swarm.CS import run_cs
 
+from algorithms.base import generate_initial_population
+
 # Import problems
 from problems.continuous import get_problem
 from config.experiment_config import (
@@ -42,10 +44,22 @@ class VisualizationRunner:
         algo_func, algo_params = self._get_algorithm(algorithm, algo_specific_params)
         problem_func, problem_info = get_problem(problem, dim)
         bounds = problem_info['bounds']
+
+        # Generate a single initial population for deterministic runs, avoiding the origin
+        lower, upper = bounds
+        # Define a radius for the exclusion zone, e.g., 10% of the range
+        avoid_radius = (upper - lower) * 0.5
+        
+        pop_size_key = next((k for k in ['n_particles', 'n_bees', 'n_fireflies', 'n_nests', 'pop_size'] if k in algo_params), None)
+        pop_size = algo_params.get(pop_size_key, 30)
+        initial_pop = generate_initial_population(
+            dim, bounds, pop_size, self.seed, avoid_origin_radius=avoid_radius
+        )
         
         if progress_callback: progress_callback("Calculating convergence...")
         convergence_data = self._get_convergence_data(
-            algo_func, algo_params, problem_func, bounds, dim, max_iter
+            algo_func, algo_params, problem_func, bounds, dim, max_iter,
+            initial_population=initial_pop
         )
         
         performance_data = self._get_performance_data(
@@ -58,9 +72,10 @@ class VisualizationRunner:
             progress_callback
         )
         
+        # For landscape, we need a 2D population
         landscape_data = self._get_landscape_data(
             algo_func, algo_params, problem_func, bounds, max_iter,
-            progress_callback
+            progress_callback, pop_size=pop_size, avoid_radius=avoid_radius
         )
         
         return {
@@ -99,10 +114,11 @@ class VisualizationRunner:
         return algo_func, params
     
     def _get_convergence_data(self, algo_func, algo_params, problem_func, bounds, 
-                              dim, max_iter):
+                              dim, max_iter, initial_population=None):
         """1. CONVERGENCE ABILITY DATA"""
         params = {'dim': dim, 'bounds': bounds, 'max_iter': max_iter, **algo_params}
-        result = algo_func(objective_func=problem_func, seed=self.seed, **params)
+        result = algo_func(objective_func=problem_func, seed=self.seed, 
+                           initial_population=initial_population, **params)
         history = result['history'] if isinstance(result, dict) else result.history
         return {'history': history}
     
@@ -193,12 +209,21 @@ class VisualizationRunner:
         return results
     
     def _get_landscape_data(self, algo_func, algo_params, problem_func, bounds,
-                            max_iter, progress_callback=None):
+                            max_iter, progress_callback=None, pop_size=30, avoid_radius=0.0):
         """4. 3D LANDSCAPE DATA"""
         if progress_callback: progress_callback("Computing landscape (running algorithm)...")
+        
+        # Generate a 2D initial population for the landscape plot, avoiding the origin
+        initial_pop_2d = generate_initial_population(
+            dim=2, bounds=bounds, pop_size=pop_size, seed=self.seed, 
+            avoid_origin_radius=avoid_radius
+        )
+        
         params_2d = {'dim': 2, 'bounds': bounds, 'max_iter': max_iter, **algo_params}
-        result = algo_func(objective_func=problem_func, seed=self.seed, **params_2d)
+        result = algo_func(objective_func=problem_func, seed=self.seed, 
+                           initial_population=initial_pop_2d, **params_2d)
         best_position = result['best_position'] if isinstance(result, dict) else result.best_position
+        best_fitness = result['best_fitness'] if isinstance(result, dict) else result.best_fitness
         
         lower, upper = bounds
         resolution = 50
@@ -215,5 +240,6 @@ class VisualizationRunner:
                 
         return {
             'best_position': best_position,
+            'best_fitness': best_fitness,
             'X': X, 'Y': Y, 'Z': Z
         }

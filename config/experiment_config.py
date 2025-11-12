@@ -43,8 +43,6 @@ DEFAULT_PSO_CONFIG = AlgorithmConfig(
         "w": 0.7298,
         "c1": 1.49618,
         "c2": 1.49618,
-        "w_min": 0.4,
-        "w_max": 0.9,
         "v_max_ratio": 0.2
     }
 )
@@ -75,7 +73,6 @@ DEFAULT_FA_CONFIG = AlgorithmConfig(
     params={
         "n_fireflies": 25,
         "alpha": 0.5,
-        "alpha_min": 0.01,
         "beta0": 1.0,
         "gamma": 1.0
     }
@@ -310,8 +307,6 @@ ALGORITHM_UI_CONFIG = {
     'PSO': {
         'n_particles': {'label': 'Particle Count', 'default': DEFAULT_PSO_CONFIG.params['n_particles'], 'type': int, 'min': 5, 'max': 100},
         'w': {'label': 'Inertia Weight', 'default': DEFAULT_PSO_CONFIG.params['w'], 'type': float, 'min': 0.1, 'max': 1.5},
-        'w_min': {'label': 'Min Inertia', 'default': DEFAULT_PSO_CONFIG.params['w_min'], 'type': float, 'min': 0.1, 'max': 1.0},
-        'w_max': {'label': 'Max Inertia', 'default': DEFAULT_PSO_CONFIG.params['w_max'], 'type': float, 'min': 0.1, 'max': 1.5},
         'c1': {'label': 'Cognitive Coefficient', 'default': DEFAULT_PSO_CONFIG.params['c1'], 'type': float, 'min': 0.0, 'max': 4.0},
         'c2': {'label': 'Social Coefficient', 'default': DEFAULT_PSO_CONFIG.params['c2'], 'type': float, 'min': 0.0, 'max': 4.0},
         'v_max_ratio': {'label': 'Velocity Limit', 'default': DEFAULT_PSO_CONFIG.params['v_max_ratio'], 'type': float, 'min': 0.05, 'max': 1.0},
@@ -324,7 +319,6 @@ ALGORITHM_UI_CONFIG = {
     'FA': {
         'n_fireflies': {'label': 'Population Size', 'default': DEFAULT_FA_CONFIG.params['n_fireflies'], 'type': int, 'min': 5, 'max': 100},
         'alpha': {'label': 'Randomness', 'default': DEFAULT_FA_CONFIG.params['alpha'], 'type': float, 'min': 0.01, 'max': 2.0},
-        'alpha_min': {'label': 'Min Randomness', 'default': DEFAULT_FA_CONFIG.params['alpha_min'], 'type': float, 'min': 0.001, 'max': 0.5},
         'beta0': {'label': 'Attractiveness', 'default': DEFAULT_FA_CONFIG.params['beta0'], 'type': float, 'min': 0.1, 'max': 5.0},
         'gamma': {'label': 'Absorption', 'default': DEFAULT_FA_CONFIG.params['gamma'], 'type': float, 'min': 0.01, 'max': 10.0},
     },

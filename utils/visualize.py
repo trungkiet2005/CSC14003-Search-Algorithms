@@ -142,7 +142,9 @@ def plot_3d_surface(func: Callable, bounds: Tuple[float, float],
                    resolution: int = 50,
                    title: str = "3D Function Surface",
                    save_path: Optional[str] = None,
-                   best_point: Optional[np.ndarray] = None) -> None:
+                   best_point: Optional[np.ndarray] = None,
+                   best_fitness: Optional[float] = None,
+                   ax: Optional[plt.Axes] = None) -> plt.Figure:
     """
     Plot 3D surface of a 2D objective function
     
@@ -153,6 +155,8 @@ def plot_3d_surface(func: Callable, bounds: Tuple[float, float],
         title: Plot title
         save_path: Path to save figure
         best_point: Optional (x, y) point to mark on surface
+        best_fitness: Optional fitness value at the best point
+        ax: Optional Matplotlib axes to plot on.
     """
     lower, upper = bounds
     
@@ -167,10 +171,15 @@ def plot_3d_surface(func: Callable, bounds: Tuple[float, float],
         for j in range(resolution):
             Z[i, j] = func([X[i, j], Y[i, j]])
     
-    # Create 3D plot
-    fig = plt.figure(figsize=(14, 10))
-    ax = fig.add_subplot(111, projection='3d')
-    
+    # Create 3D plot if no axes are provided
+    if ax is None:
+        fig = plt.figure(figsize=(14, 10))
+        ax = fig.add_subplot(111, projection='3d')
+        show_plot = True
+    else:
+        fig = ax.get_figure()
+        show_plot = False
+
     # Surface plot with improved colors
     surf = ax.plot_surface(X, Y, Z, cmap='viridis', alpha=0.9,
                           linewidth=0, antialiased=True,
@@ -178,11 +187,21 @@ def plot_3d_surface(func: Callable, bounds: Tuple[float, float],
     
     # Mark best point if provided
     if best_point is not None and len(best_point) >= 2:
-        z_best = func(best_point)
+        z_best = best_fitness if best_fitness is not None else func(best_point)
         ax.scatter([best_point[0]], [best_point[1]], [z_best],
                   color='red', s=200, marker='*', 
                   edgecolors='black', linewidths=2,
                   label='Best Solution', zorder=10)
+        
+        # Add text annotation for the best point
+        pos_text = f"Pos: [{best_point[0]:.2e}, {best_point[1]:.2e}]"
+        fit_text = f"Fit: {z_best:.2e}"
+        annotation_text = f"{pos_text}\n{fit_text}"
+        
+        ax.text(best_point[0], best_point[1], z_best, annotation_text,
+                color='black', zorder=11, ha='left', va='bottom',
+                bbox=dict(boxstyle='round,pad=0.4', fc='yellow', ec='black', lw=1, alpha=0.8))
+        
         ax.legend(fontsize=12)
     
     ax.set_xlabel('X', fontsize=12, labelpad=10)
@@ -190,19 +209,21 @@ def plot_3d_surface(func: Callable, bounds: Tuple[float, float],
     ax.set_zlabel('f(X, Y)', fontsize=12, labelpad=10)
     ax.set_title(title, fontsize=16, fontweight='bold', pad=20)
     
-    # Add colorbar
-    fig.colorbar(surf, shrink=0.5, aspect=10, pad=0.1)
+    # Add colorbar if we created the figure
+    if show_plot:
+        fig.colorbar(surf, shrink=0.5, aspect=10, pad=0.1)
     
     # Adjust viewing angle
     ax.view_init(elev=30, azim=45)
     
-    plt.tight_layout()
+    if show_plot:
+        plt.tight_layout()
     
-    if save_path:
+    if save_path and show_plot:
         plt.savefig(save_path, bbox_inches='tight', dpi=300)
         print(f"Saved: {save_path}")
     
-    # plt.show()
+    return fig
 
 
 def plot_contour(func: Callable, bounds: Tuple[float, float],
@@ -210,7 +231,8 @@ def plot_contour(func: Callable, bounds: Tuple[float, float],
                 title: str = "Contour Plot",
                 save_path: Optional[str] = None,
                 best_point: Optional[np.ndarray] = None,
-                particle_positions: Optional[np.ndarray] = None) -> None:
+                particle_positions: Optional[np.ndarray] = None,
+                ax: Optional[plt.Axes] = None) -> None:
     """
     Plot contour of a 2D objective function
     
@@ -222,6 +244,7 @@ def plot_contour(func: Callable, bounds: Tuple[float, float],
         save_path: Path to save figure
         best_point: Optional (x, y) point to mark
         particle_positions: Optional array of particle positions to plot
+        ax: Matplotlib axes
     """
     lower, upper = bounds
     
@@ -236,7 +259,12 @@ def plot_contour(func: Callable, bounds: Tuple[float, float],
         for j in range(resolution):
             Z[i, j] = func([X[i, j], Y[i, j]])
     
-    fig, ax = plt.subplots(figsize=(12, 10))
+    if ax is None:
+        fig, ax = plt.subplots(figsize=(12, 10))
+        show_plot = True
+    else:
+        fig = ax.get_figure()
+        show_plot = False
     
     # Contour plot with filled contours
     contourf = ax.contourf(X, Y, Z, levels=30, cmap='viridis', alpha=0.6)
@@ -244,7 +272,7 @@ def plot_contour(func: Callable, bounds: Tuple[float, float],
                          alpha=0.3, linewidths=0.5)
     
     # Colorbar
-    cbar = plt.colorbar(contourf, ax=ax, label='Fitness')
+    cbar = fig.colorbar(contourf, ax=ax, label='Fitness')
     
     # Plot particles if provided
     if particle_positions is not None:
@@ -268,13 +296,12 @@ def plot_contour(func: Callable, bounds: Tuple[float, float],
     ax.legend(fontsize=11, loc='best')
     ax.grid(True, alpha=0.3, linestyle='--')
     
-    plt.tight_layout()
-    
-    if save_path:
-        plt.savefig(save_path, bbox_inches='tight', dpi=300)
-        print(f"Saved: {save_path}")
-    
-    # plt.show()
+    if show_plot:
+        plt.tight_layout()
+        if save_path:
+            plt.savefig(save_path, bbox_inches='tight', dpi=300)
+            print(f"Saved: {save_path}")
+        # plt.show()
 
 
 def plot_tsp_route(cities: np.ndarray, route: list, distance: float,

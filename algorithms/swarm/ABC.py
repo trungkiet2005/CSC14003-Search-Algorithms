@@ -36,6 +36,7 @@ class ABC(PopulationBasedOptimizer):
     def optimize(self, objective_func: Callable, 
                 dim: int, bounds: Tuple[float, float],
                 max_iter: int = 100, minimize: bool = True,
+                initial_population: Optional[np.ndarray] = None,
                 **kwargs) -> OptimizationResult:
         """
         Run ABC optimization
@@ -46,6 +47,7 @@ class ABC(PopulationBasedOptimizer):
             bounds: (lower, upper) bounds for each dimension
             max_iter: Maximum number of iterations
             minimize: True for minimization, False for maximization
+            initial_population: Optional pre-generated initial population
             
         Returns:
             OptimizationResult with best solution and history
@@ -59,7 +61,13 @@ class ABC(PopulationBasedOptimizer):
             limit = self.limit
         
         # Initialize food sources (solutions)
-        food_sources = self._initialize_population(dim, lower, upper)
+        if initial_population is not None:
+            if len(initial_population) != self.n_bees:
+                raise ValueError(f"Initial population size {len(initial_population)} does not match n_bees {self.n_bees}")
+            food_sources = initial_population.copy()
+        else:
+            food_sources = self._initialize_population(dim, lower, upper)
+
         fitness = self._evaluate_population(food_sources, objective_func)
         
         # Convert fitness for probability calculation (higher is better)
@@ -233,12 +241,14 @@ class ABC(PopulationBasedOptimizer):
 def run_abc(objective_func: Callable, dim: int, bounds: Tuple[float, float],
            n_bees: int = 30, max_iter: int = 100, limit: int = None,
            modification_rate: float = 1.0,
-           minimize: bool = True, seed: Optional[int] = None) -> dict:
+           minimize: bool = True, seed: Optional[int] = None,
+           initial_population: Optional[np.ndarray] = None) -> dict:
     """
     Convenience function to run ABC
     
     Returns dictionary for backward compatibility
     """
     abc = ABC(n_bees=n_bees, limit=limit, modification_rate=modification_rate, seed=seed)
-    result = abc.optimize(objective_func, dim, bounds, max_iter, minimize)
+    result = abc.optimize(objective_func, dim, bounds, max_iter, minimize,
+                          initial_population=initial_population)
     return result.to_dict()

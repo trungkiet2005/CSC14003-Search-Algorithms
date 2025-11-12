@@ -45,6 +45,7 @@ class GeneticAlgorithm(PopulationBasedOptimizer):
     def optimize(self, objective_func: Callable, 
                 dim: int, bounds: Tuple[float, float],
                 max_iter: int = 100, minimize: bool = True,
+                initial_population: Optional[np.ndarray] = None,
                 **kwargs) -> OptimizationResult:
         """
         Run Genetic Algorithm optimization
@@ -55,6 +56,7 @@ class GeneticAlgorithm(PopulationBasedOptimizer):
             bounds: (lower, upper) bounds for each dimension
             max_iter: Maximum number of generations
             minimize: True for minimization, False for maximization
+            initial_population: Optional pre-generated initial population
             
         Returns:
             OptimizationResult with best solution and history
@@ -62,7 +64,13 @@ class GeneticAlgorithm(PopulationBasedOptimizer):
         lower, upper = bounds
         
         # Initialize population
-        population = self._initialize_population(dim, lower, upper)
+        if initial_population is not None:
+            if len(initial_population) != self.pop_size:
+                raise ValueError(f"Initial population size {len(initial_population)} does not match pop_size {self.pop_size}")
+            population = initial_population.copy()
+        else:
+            population = self._initialize_population(dim, lower, upper)
+
         fitness = self._evaluate_population(population, objective_func)
         
         # Track best solution
@@ -233,7 +241,8 @@ def run_ga(objective_func: Callable, dim: int, bounds: Tuple[float, float],
           pop_size: int = 50, max_iter: int = 100,
           crossover_rate: float = 0.8, mutation_rate: float = 0.1,
           tournament_size: int = 3, elitism_ratio: float = 0.1,
-          minimize: bool = True, seed: Optional[int] = None) -> dict:
+          minimize: bool = True, seed: Optional[int] = None,
+          initial_population: Optional[np.ndarray] = None) -> dict:
     """
     Convenience function to run Genetic Algorithm
     
@@ -247,5 +256,6 @@ def run_ga(objective_func: Callable, dim: int, bounds: Tuple[float, float],
         elitism_ratio=elitism_ratio,
         seed=seed
     )
-    result = ga.optimize(objective_func, dim, bounds, max_iter, minimize)
+    result = ga.optimize(objective_func, dim, bounds, max_iter, minimize,
+                         initial_population=initial_population)
     return result.to_dict()

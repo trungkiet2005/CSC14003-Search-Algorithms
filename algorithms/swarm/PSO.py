@@ -23,14 +23,11 @@ class PSO(PopulationBasedOptimizer):
     
     def __init__(self, n_particles: int = 30, 
                  w: float = 0.7298, c1: float = 1.49618, c2: float = 1.49618,
-                 w_min: float = 0.4, w_max: float = 0.9,
                  v_max_ratio: float = 0.2,
                  seed: Optional[int] = None):
         super().__init__(population_size=n_particles, seed=seed)
         self.n_particles = n_particles
         self.w_initial = w
-        self.w_min = w_min
-        self.w_max = w_max
         self.c1 = c1
         self.c2 = c2
         self.v_max_ratio = v_max_ratio
@@ -40,6 +37,7 @@ class PSO(PopulationBasedOptimizer):
     def optimize(self, objective_func: Callable, 
                 dim: int, bounds: Tuple[float, float],
                 max_iter: int = 100, minimize: bool = True,
+                initial_population: Optional[np.ndarray] = None,
                 **kwargs) -> OptimizationResult:
         """
         Run PSO optimization
@@ -50,6 +48,7 @@ class PSO(PopulationBasedOptimizer):
             bounds: (lower, upper) bounds for each dimension
             max_iter: Maximum number of iterations
             minimize: True for minimization, False for maximization
+            initial_population: Optional pre-generated initial population
             
         Returns:
             OptimizationResult with best solution and history
@@ -60,7 +59,13 @@ class PSO(PopulationBasedOptimizer):
         v_max = self.v_max_ratio * (upper - lower)
         
         # Initialize particles and velocities
-        positions = self._initialize_population(dim, lower, upper)
+        if initial_population is not None:
+            if len(initial_population) != self.n_particles:
+                raise ValueError(f"Initial population size {len(initial_population)} does not match n_particles {self.n_particles}")
+            positions = initial_population.copy()
+        else:
+            positions = self._initialize_population(dim, lower, upper)
+            
         velocities = self.rng.uniform(-v_max, v_max, (self.n_particles, dim))
         
         # Evaluate initial fitness
@@ -84,8 +89,7 @@ class PSO(PopulationBasedOptimizer):
         
         # Main PSO loop
         for iteration in range(max_iter):
-            # Linearly decreasing inertia weight
-            w = self.w_max - (self.w_max - self.w_min) * iteration / max_iter
+            w = self.w_initial
             
             for i in range(self.n_particles):
                 # Generate random coefficients
@@ -147,17 +151,19 @@ class PSO(PopulationBasedOptimizer):
 def run_pso(objective_func: Callable, dim: int, bounds: Tuple[float, float],
            n_particles: int = 30, max_iter: int = 100,
            w: float = 0.7298, c1: float = 1.49618, c2: float = 1.49618,
-           w_min: float = 0.4, w_max: float = 0.9, v_max_ratio: float = 0.2,
-           minimize: bool = True, seed: Optional[int] = None) -> dict:
+           v_max_ratio: float = 0.2,
+           minimize: bool = True, seed: Optional[int] = None,
+           initial_population: Optional[np.ndarray] = None) -> dict:
     """
     Convenience function to run PSO
     
     Returns dictionary for backward compatibility
     """
     pso = PSO(n_particles=n_particles, w=w, c1=c1, c2=c2, 
-              w_min=w_min, w_max=w_max, v_max_ratio=v_max_ratio,
+              v_max_ratio=v_max_ratio,
               seed=seed)
-    result = pso.optimize(objective_func, dim, bounds, max_iter, minimize)
+    result = pso.optimize(objective_func, dim, bounds, max_iter, minimize,
+                          initial_population=initial_population)
     return result.to_dict()
 
 

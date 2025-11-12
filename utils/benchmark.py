@@ -8,6 +8,8 @@ from dataclasses import dataclass, asdict
 import json
 import tracemalloc
 
+from algorithms.base import generate_initial_population
+
 
 @dataclass
 class AlgorithmStats:
@@ -105,12 +107,27 @@ class BenchmarkRunner:
                 run_seed = seeds[run]
             else:
                 run_seed = self.rng.integers(0, 2**31 - 1)
+
+            # --- Generate a deterministic initial population for this run ---
+            initial_population = None
+            pop_size_key = next((k for k in ['n_particles', 'n_bees', 'n_fireflies', 'n_nests', 'pop_size'] if k in kwargs), None)
+            if pop_size_key and 'dim' in kwargs and 'bounds' in kwargs:
+                pop_size = kwargs[pop_size_key]
+                dim = kwargs['dim']
+                bounds = kwargs['bounds']
+                initial_population = generate_initial_population(dim, bounds, pop_size, run_seed)
             
             # Trace memory and time
             tracemalloc.start()
             start_time = time.perf_counter()
             
-            result = algorithm_func(objective_func=objective_func, seed=run_seed, minimize=minimize, **kwargs)
+            result = algorithm_func(
+                objective_func=objective_func, 
+                seed=run_seed, 
+                minimize=minimize, 
+                initial_population=initial_population,
+                **kwargs
+            )
             
             end_time = time.perf_counter()
             _, peak_mem = tracemalloc.get_traced_memory()

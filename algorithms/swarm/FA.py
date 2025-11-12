@@ -24,13 +24,12 @@ class FA(PopulationBasedOptimizer):
     """
     
     def __init__(self, n_fireflies: int = 25, 
-                 alpha: float = 0.5, alpha_min: float = 0.01,
+                 alpha: float = 0.5,
                  beta0: float = 1.0, gamma: float = 1.0,
                  seed: Optional[int] = None):
         super().__init__(population_size=n_fireflies, seed=seed)
         self.n_fireflies = n_fireflies
         self.alpha_initial = alpha
-        self.alpha_min = alpha_min
         self.beta0 = beta0
         self.gamma = gamma
         self.name = "FA"
@@ -39,6 +38,7 @@ class FA(PopulationBasedOptimizer):
     def optimize(self, objective_func: Callable, 
                 dim: int, bounds: Tuple[float, float],
                 max_iter: int = 100, minimize: bool = True,
+                initial_population: Optional[np.ndarray] = None,
                 **kwargs) -> OptimizationResult:
         """
         Run Firefly Algorithm optimization
@@ -49,6 +49,7 @@ class FA(PopulationBasedOptimizer):
             bounds: (lower, upper) bounds for each dimension
             max_iter: Maximum number of iterations
             minimize: True for minimization, False for maximization
+            initial_population: Optional pre-generated initial population
             
         Returns:
             OptimizationResult with best solution and history
@@ -56,7 +57,13 @@ class FA(PopulationBasedOptimizer):
         lower, upper = bounds
         
         # Initialize firefly positions
-        fireflies = self._initialize_population(dim, lower, upper)
+        if initial_population is not None:
+            if len(initial_population) != self.n_fireflies:
+                raise ValueError(f"Initial population size {len(initial_population)} does not match n_fireflies {self.n_fireflies}")
+            fireflies = initial_population.copy()
+        else:
+            fireflies = self._initialize_population(dim, lower, upper)
+
         intensity = self._evaluate_population(fireflies, objective_func)
         
         # For minimization, lower objective values = higher brightness
@@ -77,10 +84,6 @@ class FA(PopulationBasedOptimizer):
         scale = upper - lower
         
         for iteration in range(max_iter):
-            # Adaptive randomization parameter (decreases over time)
-            alpha_t = self.alpha_min + (self.alpha_initial - self.alpha_min) * \
-                     np.exp(-iteration / max_iter)
-            
             # Store original positions for distance calculations
             fireflies_old = fireflies.copy()
             
@@ -101,7 +104,7 @@ class FA(PopulationBasedOptimizer):
                         # Move firefly i towards j
                         # x_i = x_i + β * (x_j - x_i) + α * (rand - 0.5)
                         attraction = beta * (fireflies_old[j] - fireflies_old[i])
-                        randomization = alpha_t * scale * (self.rng.random(dim) - 0.5)
+                        randomization = self.alpha_initial * scale * (self.rng.random(dim) - 0.5)
                         
                         fireflies[i] += attraction + randomization
                         
@@ -146,15 +149,17 @@ class FA(PopulationBasedOptimizer):
 
 def run_fa(objective_func: Callable, dim: int, bounds: Tuple[float, float],
           n_fireflies: int = 25, max_iter: int = 100,
-          alpha: float = 0.5, alpha_min: float = 0.01,
+          alpha: float = 0.5,
           beta0: float = 1.0, gamma: float = 1.0,
-          minimize: bool = True, seed: Optional[int] = None) -> dict:
+          minimize: bool = True, seed: Optional[int] = None,
+          initial_population: Optional[np.ndarray] = None) -> dict:
     """
     Convenience function to run Firefly Algorithm
     
     Returns dictionary for backward compatibility
     """
-    fa = FA(n_fireflies=n_fireflies, alpha=alpha, alpha_min=alpha_min,
+    fa = FA(n_fireflies=n_fireflies, alpha=alpha,
             beta0=beta0, gamma=gamma, seed=seed)
-    result = fa.optimize(objective_func, dim, bounds, max_iter, minimize)
+    result = fa.optimize(objective_func, dim, bounds, max_iter, minimize,
+                         initial_population=initial_population)
     return result.to_dict()

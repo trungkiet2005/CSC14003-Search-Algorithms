@@ -15,8 +15,9 @@ import seaborn as sns
 from .visualization_runner import VisualizationRunner
 from utils.visualize import (
     plot_convergence_comparison, plot_boxplot_comparison,
-    plot_parameter_sensitivity
+    plot_parameter_sensitivity, plot_3d_surface, plot_contour
 )
+from problems.continuous import get_problem
 from config.experiment_config import (
     PARAMETER_RANGES, ALGORITHM_UI_CONFIG, ExperimentConfig, 
     ProblemConfig, AlgorithmConfig
@@ -545,7 +546,7 @@ class VisualizationTab:
             self.metric_display_layout.addWidget(canvas)
         else:
             # If no figure was generated (e.g., no data yet), show a placeholder text
-            placeholder = data if data else "No data available."
+            placeholder = data if data else "Choose the parameters that you want to examine in the sidebar."
             textbox = QTextEdit()
             textbox.setReadOnly(True)
             textbox.setText(str(placeholder))
@@ -609,7 +610,7 @@ class VisualizationTab:
         std_fit = np.std(best_fitnesses)
         stats_text_ax2 = f'Mean: {mean_fit:.4f}\nStd: {std_fit:.4f}'
         props_ax2 = dict(boxstyle='round', facecolor='lightblue', alpha=0.7)
-        ax2.text(0.98, 0.95, stats_text_ax2, transform=ax2.transAxes, fontsize=9,
+        ax2.text(0.98  , 0.95, stats_text_ax2, transform=ax2.transAxes, fontsize=9,
                  verticalalignment='top', horizontalalignment='right', bbox=props_ax2)
         
         plt.tight_layout(pad=0.5)
@@ -668,33 +669,37 @@ class VisualizationTab:
         return fig
 
     def _plot_landscape(self, data, metadata):
-        fig = plt.figure(figsize=(12, 5))
-        X, Y, Z = data['X'], data['Y'], data['Z']
-        best_position = data['best_position']
-        algo, prob = metadata['algorithm'], metadata['problem']
+        problem_func, problem_info = get_problem(metadata['problem'], dim=2)
+        bounds = problem_info['bounds']
+        best_position = data.get('best_position')
+        best_fitness = data.get('best_fitness')
         
-        fig.suptitle(f"Landscape: {algo} on {prob.capitalize()}", fontsize=14, fontweight='bold')
-        
-        ax1 = fig.add_subplot(121, projection='3d')
-        ax1.plot_surface(X, Y, Z, cmap='viridis', alpha=0.8, lw=0)
-        if len(best_position) >= 2:
-            z_best = np.interp(best_position[1], Y[:, 0], Z[:, np.argmin(np.abs(X[0, :] - best_position[0]))])
-            ax1.scatter(best_position[0], best_position[1], z_best, c='r', s=150, marker='*', ec='k', lw=1, label=f'Solution', zorder=10)
-            ax1.legend(fontsize=10)
-        ax1.set_title('3D Surface', fontsize=12)
-        ax1.tick_params(axis='both', which='major', labelsize=8)
+        fig = plt.figure(figsize=(12, 5.5))
+        fig.suptitle(f"Landscape: {metadata['algorithm']} on {metadata['problem'].capitalize()}", fontsize=14, fontweight='bold')
 
+        # 3D Surface Plot
+        ax1 = fig.add_subplot(121, projection='3d')
+        plot_3d_surface(
+            func=problem_func,
+            bounds=bounds,
+            title='3D Surface View',
+            best_point=best_position,
+            best_fitness=best_fitness,
+            ax=ax1
+        )
+
+        # Contour Plot
         ax2 = fig.add_subplot(122)
-        contour_plot = ax2.contourf(X, Y, Z, levels=20, cmap='viridis', alpha=0.7)
-        fig.colorbar(contour_plot, ax=ax2)
-        ax2.contour(X, Y, Z, levels=10, colors='k', alpha=0.3, linewidths=0.5)
-        if len(best_position) >= 2:
-            ax2.scatter(best_position[0], best_position[1], c='r', s=200, marker='*', ec='k', lw=1.5, label=f'Solution', zorder=10)
-        ax2.set_title('Contour View', fontsize=12)
+        plot_contour(
+            func=problem_func,
+            bounds=bounds,
+            title='Contour View',
+            best_point=best_position,
+            ax=ax2
+        )
         ax2.set_aspect('equal')
-        ax2.tick_params(axis='both', which='major', labelsize=8)
         
-        plt.tight_layout(pad=0.5)
+        plt.tight_layout(rect=[0, 0.03, 1, 0.95])
         return fig
         
     def _start_spinner(self):

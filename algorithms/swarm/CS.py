@@ -41,6 +41,7 @@ class CS(PopulationBasedOptimizer):
     def optimize(self, objective_func: Callable, 
                 dim: int, bounds: Tuple[float, float],
                 max_iter: int = 100, minimize: bool = True,
+                initial_population: Optional[np.ndarray] = None,
                 **kwargs) -> OptimizationResult:
         """
         Run Cuckoo Search optimization
@@ -51,6 +52,7 @@ class CS(PopulationBasedOptimizer):
             bounds: (lower, upper) bounds for each dimension
             max_iter: Maximum number of iterations
             minimize: True for minimization, False for maximization
+            initial_population: Optional pre-generated initial population
             
         Returns:
             OptimizationResult with best solution and history
@@ -58,7 +60,13 @@ class CS(PopulationBasedOptimizer):
         lower, upper = bounds
         
         # Initialize nests
-        nests = self._initialize_population(dim, lower, upper)
+        if initial_population is not None:
+            if len(initial_population) != self.n_nests:
+                raise ValueError(f"Initial population size {len(initial_population)} does not match n_nests {self.n_nests}")
+            nests = initial_population.copy()
+        else:
+            nests = self._initialize_population(dim, lower, upper)
+
         fitness = self._evaluate_population(nests, objective_func)
         
         # Initialize best solution
@@ -192,7 +200,8 @@ class CS(PopulationBasedOptimizer):
 def run_cs(objective_func: Callable, dim: int, bounds: Tuple[float, float],
           n_nests: int = 25, max_iter: int = 100, pa: float = 0.25,
           beta: float = 1.5, step_size_factor: float = 0.01,
-          minimize: bool = True, seed: Optional[int] = None) -> dict:
+          minimize: bool = True, seed: Optional[int] = None,
+          initial_population: Optional[np.ndarray] = None) -> dict:
     """
     Convenience function to run Cuckoo Search
     
@@ -200,5 +209,6 @@ def run_cs(objective_func: Callable, dim: int, bounds: Tuple[float, float],
     """
     cs = CS(n_nests=n_nests, pa=pa, beta=beta, 
             step_size_factor=step_size_factor, seed=seed)
-    result = cs.optimize(objective_func, dim, bounds, max_iter, minimize)
+    result = cs.optimize(objective_func, dim, bounds, max_iter, minimize,
+                         initial_population=initial_population)
     return result.to_dict()

@@ -11,13 +11,13 @@ class ACO(DiscreteOptimizer):
     """Ant Colony System (ACS) bases on ACO metaheuristic for TSP — Dorigo & Gambardella 1996"""
 
     def __init__(self, n_ants: int = 20, alpha: float = 1.0, beta: float = 2.0,
-                 rho: float = 0.1, phi: float = 0.1, q0: float = 0.9,
+                 evaporation_rate: float = 0.1, phi: float = 0.1, q0: float = 0.9,
                  seed: Optional[int] = None):
         super().__init__(seed)
         self.n_ants = n_ants
         self.alpha = alpha
         self.beta = beta
-        self.rho = rho              # evaporation for offline update
+        self.evaporation_rate = evaporation_rate              # evaporation for offline update
         self.phi = phi              # local update rate
         self.q0 = q0                # pseudorandom proportional parameter
         self.name = "ACO"
@@ -58,10 +58,10 @@ class ACO(DiscreteOptimizer):
             history.append(best_distance)
 
             # Offline pheromone update (only best ant)
-            pheromone *= (1 - self.rho)
+            pheromone *= (1 - self.evaporation_rate)
             for i in range(len(best_route)):
                 a, b = best_route[i], best_route[(i + 1) % len(best_route)]
-                pheromone[a, b] += self.rho * (1.0 / best_distance)
+                pheromone[a, b] += self.evaporation_rate * (1.0 / best_distance)
                 pheromone[b, a] = pheromone[a, b]
 
         return OptimizationResult(
@@ -117,7 +117,7 @@ def run_aco(distance_matrix: np.ndarray,
             max_iter: int = 100,
             alpha: float = 1.0, 
             beta: float = 2.0, 
-            rho: float = 0.1, 
+            evaporation_rate: float = 0.1, 
             phi: float = 0.1, 
             q0: float = 0.9,
             seed: Optional[int] = None) -> dict:
@@ -126,7 +126,7 @@ def run_aco(distance_matrix: np.ndarray,
     """
     acs = ACO(
         n_ants=n_ants, alpha=alpha, beta=beta,
-        rho=rho, phi=phi, q0=q0, seed=seed
+        evaporation_rate=evaporation_rate, phi=phi, q0=q0, seed=seed
     )
     result = acs.optimize_tsp(distance_matrix, max_iter)
     return result.to_dict()

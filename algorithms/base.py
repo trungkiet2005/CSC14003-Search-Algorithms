@@ -161,3 +161,42 @@ def run_with_timing(func: Callable) -> Callable:
         
         return result
     return wrapper
+
+
+def generate_initial_population(dim: int, bounds: Tuple[float, float], 
+                              pop_size: int, seed: Optional[int] = None,
+                              avoid_origin_radius: Optional[float] = None) -> np.ndarray:
+    """
+    Generates a deterministic initial population based on a seed.
+    
+    Args:
+        dim: Problem dimensionality.
+        bounds: Tuple of (lower, upper) bounds.
+        pop_size: The size of the population to generate.
+        seed: The random seed for deterministic generation.
+        avoid_origin_radius: If provided, creates an exclusion zone with this radius
+                             around the origin.
+        
+    Returns:
+        A NumPy array representing the initial population.
+    """
+    rng = np.random.default_rng(seed)
+    lower, upper = bounds
+
+    # If radius is specified and the bounds span across it, create an exclusion zone
+    if avoid_origin_radius is not None and \
+       lower < -avoid_origin_radius and upper > avoid_origin_radius:
+        
+        population = np.zeros((pop_size, dim))
+        for i in range(pop_size):
+            for j in range(dim):
+                if rng.random() < 0.5:
+                    # Sample from the lower range: [lower, -radius]
+                    population[i, j] = rng.uniform(lower, -avoid_origin_radius)
+                else:
+                    # Sample from the upper range: [radius, upper]
+                    population[i, j] = rng.uniform(avoid_origin_radius, upper)
+        return population
+    
+    # Default behavior
+    return rng.uniform(lower, upper, (pop_size, dim))
