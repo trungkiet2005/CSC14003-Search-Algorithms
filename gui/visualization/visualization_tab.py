@@ -598,11 +598,19 @@ class VisualizationTab:
         ax1.grid(True, alpha=0.2)
         ax1.legend(fontsize=8)
         
+        # Add mean fitness to the line plot
+        mean_fit = np.mean(best_fitnesses)
+        stats_text_ax1 = f'Mean Final: {mean_fit:.4f}'
+        props_ax1 = dict(boxstyle='round', facecolor='wheat', alpha=0.7)
+        ax1.text(0.98, 0.95, stats_text_ax1, transform=ax1.transAxes, fontsize=9,
+                 verticalalignment='top', horizontalalignment='right', bbox=props_ax1)
+        
         plot_boxplot_comparison({algo: best_fitnesses}, title="Final Fitness Distribution", ax=ax2)
-        mean_fit, std_fit = np.mean(best_fitnesses), np.std(best_fitnesses)
-        stats_text = f'Mean: {mean_fit:.4f}\nStd: {std_fit:.4f}'
-        props = dict(boxstyle='round', facecolor='lightblue', alpha=0.7)
-        ax2.text(0.98, 0.95, stats_text, transform=ax2.transAxes, fontsize=9, verticalalignment='top', horizontalalignment='right', bbox=props)
+        std_fit = np.std(best_fitnesses)
+        stats_text_ax2 = f'Mean: {mean_fit:.4f}\nStd: {std_fit:.4f}'
+        props_ax2 = dict(boxstyle='round', facecolor='lightblue', alpha=0.7)
+        ax2.text(0.98, 0.95, stats_text_ax2, transform=ax2.transAxes, fontsize=9,
+                 verticalalignment='top', horizontalalignment='right', bbox=props_ax2)
         
         plt.tight_layout(pad=0.5)
         return fig

@@ -5,7 +5,6 @@ import numpy as np
 import pandas as pd
 from typing import Callable, Dict, Any, List, Tuple, Optional
 from dataclasses import dataclass, asdict
-from tqdm import tqdm
 import json
 import tracemalloc
 
@@ -93,7 +92,7 @@ class BenchmarkRunner:
         best_fitnesses = []
         convergence_iters = []
         
-        iterator = tqdm(range(n_runs), desc="Running") if self.verbose else range(n_runs)
+        iterator = range(n_runs)
         
         for run in iterator:
             if progress_callback:
