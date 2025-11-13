@@ -211,7 +211,13 @@ class SimulatedAnnealingTSP:
                 delta_e = neighbor_distance - current_distance
 
                 # Metropolis criterion
-                if delta_e < 0 or self.rng.random() < np.exp(-delta_e / temp):
+                if delta_e < 0:
+                    accept = True
+                else:
+                    # clamp exponent to avoid overflow
+                    expo = min(delta_e / temp, 700.0)
+                    accept = (self.rng.random() < np.exp(-expo))
+                if accept:
                     current_route = neighbor_route
                     current_distance = neighbor_distance
                     if current_distance < best_distance:
@@ -275,7 +281,7 @@ class SimulatedAnnealingTSP:
         j = i + seg_len
 
         # Reverse the segment
-        new_route[i:j] = reversed(new_route[i:j])
+        new_route[i:j] = list(reversed(new_route[i:j]))
         return new_route
 
     def _cool_down(self, temp: float, iteration: int, max_iter: int) -> float:

@@ -29,7 +29,9 @@ class ACO(DiscreteOptimizer):
     def optimize_tsp(self, distance_matrix: np.ndarray,
                      max_iter: int = 100) -> OptimizationResult:
         n_cities = len(distance_matrix)
-        tau0 = 1.0 / (n_cities * np.mean(distance_matrix))
+        off_diag = distance_matrix[np.triu_indices(n_cities, k=1)]
+        mean_off = np.mean(off_diag[off_diag > 0]) if np.any(off_diag > 0) else 1.0
+        tau0 = 1.0 / (n_cities * mean_off)
         pheromone = np.ones((n_cities, n_cities)) * tau0
 
         with np.errstate(divide='ignore', invalid='ignore'):
@@ -87,16 +89,24 @@ class ACO(DiscreteOptimizer):
             eta = heuristic[current_city, unvisited] ** self.beta
             desirability = tau * eta
 
-            # pseudorandom proportional rule
+            # Pseudorandom proportional rule
             if self.rng.random() < self.q0:
+                # Exploitation: choose the best path
                 next_city = unvisited[np.argmax(desirability)]
             else:
-                probs = desirability / np.sum(desirability)
-                next_city = self.rng.choice(unvisited, p=probs)
+                # Exploration: choose based on probability
+                sum_des = np.sum(desirability)
+                if sum_des > 0:
+                    probs = desirability / sum_des
+                    next_city = self.rng.choice(unvisited, p=probs)
+                else:
+                    # Fallback: if all paths have zero desirability, choose randomly
+                    next_city = self.rng.choice(unvisited)
 
             # Local pheromone update
-            pheromone[current_city, next_city] = (1 - self.phi) * pheromone[current_city, next_city] + self.phi * tau0
-            pheromone[next_city, current_city] = pheromone[current_city, next_city]
+            new_val = (1 - self.phi) * pheromone[current_city, next_city] + self.phi * tau0
+            pheromone[current_city, next_city] = new_val
+            pheromone[next_city, current_city] = new_val
 
             route.append(next_city)
             visited[next_city] = True

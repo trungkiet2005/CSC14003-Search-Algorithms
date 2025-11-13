@@ -1,5 +1,6 @@
 import numpy as np
 import time
+import tracemalloc
 from typing import Dict, List, Tuple
 
 # Import algorithms
@@ -85,20 +86,31 @@ class ComparisonRunner:
         results = {}
         total_algos = len(algorithms)
         for i, (algo_name, (algo_func, user_params)) in enumerate(algorithms.items()):
-            fitnesses, times, best_result, best_distance = [], [], None, float('inf')
+            fitnesses, times, mems, best_result, best_distance = [], [], [], None, float('inf')
 
             for run in range(n_runs):
                 if progress_callback:
                     progress_callback(f"Running {algo_name} ({i+1}/{total_algos}): Run {run + 1}/{n_runs}")
 
-                start = time.time()
+                tracemalloc.start()
+                start = time.perf_counter()
                 run_params = {'max_iter': max_iter, 'seed': self.seed + run, **user_params}
                 
-                result = algo_func(tsp['distance_matrix'], **run_params) if 'distance_matrix' in algo_func.__code__.co_varnames else algo_func(tsp['objective'], **run_params)
+                # Both ACO and SA for TSP expect the distance matrix as the first argument.
+                # The 'objective' function is used by continuous optimizers, not these discrete ones.
+                if algo_name in ['SA', 'ACO']:
+                    result = algo_func(tsp['distance_matrix'], **run_params)
+                else: 
+                    # Fallback for other potential TSP algos that might use the objective function
+                    result = algo_func(tsp['objective'], **run_params)
+                
+                _, peak_mem = tracemalloc.get_traced_memory()
+                tracemalloc.stop()
                 
                 distance = result['best_distance']
                 fitnesses.append(distance)
-                times.append(time.time() - start)
+                times.append(time.perf_counter() - start)
+                mems.append(peak_mem / (1024 * 1024))
 
                 if distance < best_distance:
                     best_distance = distance
@@ -107,6 +119,7 @@ class ComparisonRunner:
             results[algo_name] = {
                 'mean_distance': np.mean(fitnesses), 'std_distance': np.std(fitnesses),
                 'best_distance': np.min(fitnesses), 'mean_time': np.mean(times),
+                'mean_mem': np.mean(mems), 'std_mem': np.std(mems),
                 'best_result': best_result, 'all_distances': fitnesses,
                 'best_route': best_result['best_route']
             }
@@ -152,8 +165,8 @@ class ComparisonRunner:
 
     def _get_tsp_scalability_data(self, algorithms, max_iter, progress_callback=None):
         """Get TSP scalability data."""
-        city_counts = [10, 15, 20, 25, 30]
-        scalability_data = {name: {'cities': [], 'distances': [], 'times': []} for name in algorithms.keys()}
+        city_counts = [10, 20, 30, 40, 50]
+        scalability_data = {name: {'cities': [], 'distances': [], 'times': [], 'mems': []} for name in algorithms.keys()}
         
         total_cities = len(city_counts)
         for i, n_cities in enumerate(city_counts):
@@ -163,13 +176,21 @@ class ComparisonRunner:
             tsp = create_tsp_problem(n_cities, seed=self.seed)
             
             for algo_name, (algo_func, base_params) in algorithms.items():
-                start = time.time()
+                tracemalloc.start()
+                start = time.perf_counter()
                 run_params = {**base_params, 'max_iter': max_iter, 'seed': self.seed}
                 
-                result = algo_func(tsp['distance_matrix'], **run_params) if 'distance_matrix' in algo_func.__code__.co_varnames else algo_func(tsp['objective'], **run_params)
+                if algo_name in ['SA', 'ACO']:
+                    result = algo_func(tsp['distance_matrix'], **run_params)
+                else:
+                    result = algo_func(tsp['objective'], **run_params)
                 
+                _, peak_mem = tracemalloc.get_traced_memory()
+                tracemalloc.stop()
+
                 scalability_data[algo_name]['cities'].append(n_cities)
                 scalability_data[algo_name]['distances'].append(result['best_distance'])
-                scalability_data[algo_name]['times'].append(time.time() - start)
+                scalability_data[algo_name]['times'].append(time.perf_counter() - start)
+                scalability_data[algo_name]['mems'].append(peak_mem / (1024 * 1024))
                 
         return scalability_data

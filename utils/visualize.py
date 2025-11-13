@@ -35,7 +35,8 @@ def plot_convergence_comparison(histories_dict: Dict[str, List[float]],
                                save_path: Optional[str] = None,
                                log_scale: bool = False,
                                xlabel: str = "Iteration",
-                               ax: Optional[plt.Axes] = None) -> None:
+                               ax: Optional[plt.Axes] = None,
+                               final_fitness_values: Optional[Dict[str, float]] = None) -> None:
     """
     Compare convergence of multiple algorithms
     
@@ -46,6 +47,7 @@ def plot_convergence_comparison(histories_dict: Dict[str, List[float]],
         log_scale: Use log scale for y-axis
         xlabel: Label for x-axis
         ax: Matplotlib axes (if None, creates new figure)
+        final_fitness_values: Optional dict of {algorithm_name: final_fitness} to annotate plot
     """
     if ax is None:
         fig, ax = plt.subplots(figsize=(12, 7))
@@ -57,7 +59,12 @@ def plot_convergence_comparison(histories_dict: Dict[str, List[float]],
     
     for (name, history), color in zip(histories_dict.items(), colors):
         ax.plot(history, label=name, linewidth=2.5, alpha=0.8, color=color)
-    
+        if final_fitness_values and name in final_fitness_values:
+            final_fitness = final_fitness_values[name]
+            ax.text(len(history) - 1, history[-1], f' {final_fitness:.4e}', color=color,
+                    verticalalignment='center', fontsize=9,
+                    bbox=dict(boxstyle='round,pad=0.3', fc='white', ec=color, lw=0.5, alpha=0.7))
+
     ax.set_title(title, fontsize=16, fontweight='bold')
     ax.set_xlabel(xlabel, fontsize=13)
     ax.set_ylabel("Fitness" + (" (log scale)" if log_scale else ""), fontsize=13)
@@ -110,6 +117,15 @@ def plot_boxplot_comparison(data_dict: Dict[str, List[float]],
                     medianprops=dict(color='red', linewidth=2),
                     meanprops=dict(color='blue', linewidth=2, linestyle='--'))
     
+    # Add annotations for medians
+    for i, (name, values) in enumerate(data_dict.items()):
+        median = np.median(values)
+        ax.text(i + 1, median, f'{median:.4e}',
+                horizontalalignment='center',
+                verticalalignment='bottom',
+                fontdict={'size': 9, 'color': 'black', 'weight': 'semibold'},
+                bbox=dict(boxstyle='round,pad=0.3', fc='white', ec='black', lw=0.5, alpha=0.6))
+
     # Color boxes
     colors = sns.color_palette("Set3", len(data))
     for patch, color in zip(bp['boxes'], colors):
@@ -361,8 +377,7 @@ def plot_tsp_route(cities: np.ndarray, route: list, distance: float,
                   edgecolors='black', linewidths=2,
                   label='Start/End', zorder=5)
     
-    ax.set_title(f"{title}\nTotal Distance: {distance:.2f}",
-                fontsize=14, fontweight='bold')
+    ax.set_title(title, fontsize=14, fontweight='bold')
     ax.set_xlabel("X Coordinate", fontsize=12)
     ax.set_ylabel("Y Coordinate", fontsize=12)
     ax.legend(fontsize=10, loc='best')

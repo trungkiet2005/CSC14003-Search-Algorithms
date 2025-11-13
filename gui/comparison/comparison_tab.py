@@ -584,9 +584,11 @@ class ComparisonTab:
             fig, ax = plt.subplots(figsize=(12, 7))
             histories = {s.algorithm_name: s.results[0]['history'] for s in data['stats_list'] 
                         if s.results and 'history' in s.results[0]}
+            final_fitnesses = {s.algorithm_name: s.mean_fitness for s in data['stats_list']}
             plot_convergence_comparison(histories, 
                                       title=f"Convergence: {data['metadata']['problem'].capitalize()} (dim={data['metadata']['dim']})", 
-                                      ax=ax, log_scale=True)
+                                      ax=ax, log_scale=True,
+                                      final_fitness_values=final_fitnesses)
         plt.tight_layout()
         return fig
 
@@ -599,17 +601,25 @@ class ComparisonTab:
             results = data['main_results']
             algo_names = list(results.keys())
             mean_times = [r['mean_time'] for r in results.values()]
-            mean_distances = [r['mean_distance'] for r in results.values()]
+            mean_mems = [r.get('mean_mem', 0) for r in results.values()] # Use .get for safety
             colors = sns.color_palette("viridis", len(algo_names))
             
-            ax1.bar(algo_names, mean_times, color=colors, alpha=0.8)
+            bars1 = ax1.bar(algo_names, mean_times, color=colors, alpha=0.8)
             ax1.set_title("Mean Execution Time", fontsize=14)
             ax1.set_ylabel("Time (seconds)", fontsize=12)
-            
-            ax2.bar(algo_names, mean_distances, color=colors, alpha=0.8)
-            ax2.set_title("Mean Solution Quality", fontsize=14)
-            ax2.set_ylabel("Tour Distance", fontsize=12)
-            
+            for bar in bars1:
+                yval = bar.get_height()
+                ax1.text(bar.get_x() + bar.get_width()/2.0, yval, f'{yval:.4f}s', 
+                         va='bottom', ha='center', fontsize=9)
+
+            bars2 = ax2.bar(algo_names, mean_mems, color=colors, alpha=0.8)
+            ax2.set_title("Mean Memory Usage", fontsize=14)
+            ax2.set_ylabel("Peak Memory (MB)", fontsize=12)
+            for bar in bars2:
+                yval = bar.get_height()
+                ax2.text(bar.get_x() + bar.get_width()/2.0, yval, f'{yval:.2f} MB', 
+                         va='bottom', ha='center', fontsize=9)
+
             for ax in [ax1, ax2]:
                 plt.setp(ax.xaxis.get_majorticklabels(), rotation=45, ha='right')
                 ax.grid(True, axis='y', linestyle='--', alpha=0.6)
@@ -640,6 +650,14 @@ class ComparisonTab:
             colors = sns.color_palette("Set3", len(boxplot_data))
             for patch, c in zip(bp['boxes'], colors):
                 patch.set_facecolor(c)
+
+            # Add annotations for medians
+            medians = [np.median(d) for d in boxplot_data.values()]
+            for i, median in enumerate(medians):
+                ax.text(i + 1, median, f'{median:.2f}',
+                        horizontalalignment='center',
+                        verticalalignment='bottom',
+                        fontdict={'size': 9, 'color': 'black', 'weight': 'semibold'})
                 
             ax.legend([Line2D([0], [0], color='red', lw=2), Line2D([0], [0], color='blue', lw=2, ls='--')], 
                      ['Median', 'Mean'])
@@ -925,19 +943,17 @@ class ComparisonTab:
 
         saved_files = []
         for view in views_to_save:
-            fig = self.generated_figures.get(view)
+            # Always regenerate the figure to ensure it's valid and not tied to a deleted canvas
+            fig = plot_map[view](self.metric_data)
             
-            if not fig:
-                temp_fig = plot_map[view](self.metric_data)
-                if temp_fig:
+            if fig:
+                try:
                     filepath = os.path.join(output_dir, f"{view}.png")
-                    temp_fig.savefig(filepath, dpi=300, bbox_inches='tight')
-                    plt.close(temp_fig)
+                    fig.savefig(filepath, dpi=300, bbox_inches='tight')
                     saved_files.append(os.path.basename(filepath))
-            else:
-                filepath = os.path.join(output_dir, f"{view}.png")
-                fig.savefig(filepath, dpi=300, bbox_inches='tight')
-                saved_files.append(os.path.basename(filepath))
+                finally:
+                    # Always close the figure to free up memory
+                    plt.close(fig)
 
         if saved_files:
             self.update_status(f"Exported {len(saved_files)} plots to {output_dir_str}", "#00D9A5")
