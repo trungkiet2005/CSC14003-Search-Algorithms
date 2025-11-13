@@ -7,14 +7,16 @@ from algorithms.swarm.PSO import run_pso
 from algorithms.swarm.ABC import run_abc
 from algorithms.swarm.FA import run_fa
 from algorithms.swarm.CS import run_cs
+from algorithms.swarm.ACO import run_aco
 
 from algorithms.base import generate_initial_population
 
 # Import problems
 from problems.continuous import get_problem
+from problems.tsp import create_tsp_problem
 from config.experiment_config import (
     PARAMETER_RANGES, DEFAULT_PSO_CONFIG, DEFAULT_ABC_CONFIG,
-    DEFAULT_FA_CONFIG, DEFAULT_CS_CONFIG, ExperimentConfig
+    DEFAULT_FA_CONFIG, DEFAULT_CS_CONFIG, DEFAULT_ACO_CONFIG, ExperimentConfig
 )
 
 class VisualizationRunner:
@@ -29,6 +31,9 @@ class VisualizationRunner:
         """
         Run comprehensive visualization analysis and return raw data for plotting.
         """
+        if exp_config.problem.name == 'tsp':
+            return self._run_tsp_visualization_analysis(exp_config, sensitivity_params, progress_callback)
+            
         # Extract parameters from the experiment configuration
         problem_config = exp_config.problem
         algo_config = exp_config.algorithms[0]  # Visualization uses one algorithm
@@ -97,11 +102,12 @@ class VisualizationRunner:
             'PSO': DEFAULT_PSO_CONFIG,
             'ABC': DEFAULT_ABC_CONFIG,
             'FA': DEFAULT_FA_CONFIG,
-            'CS': DEFAULT_CS_CONFIG
+            'CS': DEFAULT_CS_CONFIG,
+            'ACO': DEFAULT_ACO_CONFIG
         }
         
         func_map = {
-            'PSO': run_pso, 'ABC': run_abc, 'FA': run_fa, 'CS': run_cs
+            'PSO': run_pso, 'ABC': run_abc, 'FA': run_fa, 'CS': run_cs, 'ACO': run_aco
         }
         
         algo_func = func_map[algorithm]
@@ -243,3 +249,133 @@ class VisualizationRunner:
             'best_fitness': best_fitness,
             'X': X, 'Y': Y, 'Z': Z
         }
+
+    def _run_tsp_visualization_analysis(self, exp_config: ExperimentConfig,
+                                      sensitivity_params: List[str] = None,
+                                      progress_callback=None) -> Dict:
+        # Extract parameters
+        problem_config = exp_config.problem
+        algo_config = exp_config.algorithms[0]
+        
+        algorithm = algo_config.name
+        problem_name = problem_config.name
+        n_cities = problem_config.dim
+        max_iter = problem_config.max_iter
+        n_runs = exp_config.n_runs
+        algo_specific_params = algo_config.params
+
+        # Get algorithm function and parameters
+        algo_func, algo_params = self._get_algorithm(algorithm, algo_specific_params)
+        
+        # Create TSP problem
+        tsp_problem = create_tsp_problem(n_cities=n_cities, seed=self.seed)
+        distance_matrix = tsp_problem['distance_matrix']
+
+        if progress_callback: progress_callback("Calculating convergence for TSP...")
+        convergence_data = self._get_tsp_convergence_data(
+            algo_func, algo_params, distance_matrix, max_iter
+        )
+        
+        performance_data = self._get_tsp_performance_data(
+            algo_func, algo_params, n_cities, max_iter, n_runs,
+            progress_callback
+        )
+        
+        sensitivity_data = self._get_tsp_sensitivity_data(
+            algorithm, algo_func, algo_params, n_cities, max_iter, sensitivity_params,
+            progress_callback
+        )
+        
+        return {
+            'convergence': convergence_data,
+            'performance': performance_data,
+            'sensitivity': sensitivity_data,
+            'landscape': "Not applicable for TSP.", # Placeholder
+            'metadata': {
+                'algorithm': algorithm,
+                'problem': problem_name,
+                'dim': n_cities,
+                'n_runs': n_runs
+            }
+        }
+
+    def _get_tsp_convergence_data(self, algo_func, algo_params, distance_matrix, max_iter):
+        params = {'max_iter': max_iter, **algo_params}
+        result = algo_func(distance_matrix=distance_matrix, seed=self.seed, **params)
+        history = result['history'] if isinstance(result, dict) else result.history
+        return {'history': history}
+
+    def _get_tsp_performance_data(self, algo_func, algo_params, n_cities, max_iter, n_runs, progress_callback=None):
+        params = {'max_iter': max_iter, **algo_params}
+        
+        all_histories = []
+        best_fitnesses = []
+        
+        for run in range(n_runs):
+            if progress_callback:
+                progress_callback(f"Assessing TSP performance... (run {run + 1}/{n_runs})")
+            
+            tsp_problem = create_tsp_problem(n_cities=n_cities, seed=self.seed + run)
+            
+            result = algo_func(distance_matrix=tsp_problem['distance_matrix'], seed=self.seed + run, **params)
+            history = result['history'] if isinstance(result, dict) else result.history
+            all_histories.append(history)
+            best_fitnesses.append(history[-1])
+            
+        return {'all_histories': all_histories, 'best_fitnesses': best_fitnesses}
+
+    def _get_tsp_sensitivity_data(self, algorithm, algo_func, algo_params, n_cities, max_iter, sensitivity_params: List[str] = None, progress_callback=None):
+        if not sensitivity_params:
+            return {}
+
+        results = {}
+
+        total_params = len(sensitivity_params)
+        for i, param_name in enumerate(sensitivity_params):
+            param_range_info = PARAMETER_RANGES.get(algorithm, {}).get(param_name)
+            
+            if not param_range_info:
+                continue
+
+            param_values = None
+            if isinstance(param_range_info, tuple) and len(param_range_info) == 2:
+                param_values = np.linspace(param_range_info[0], param_range_info[1], 5)
+                if 'n_' in param_name:
+                    param_values = np.round(param_values).astype(int)
+            elif isinstance(param_range_info, list):
+                param_values = param_range_info
+            
+            if param_values is None:
+                continue
+
+            mean_fitness = []
+            std_fitness = []
+
+            total_values = len(param_values)
+            for j, val in enumerate(param_values):
+                if progress_callback:
+                    progress_callback(
+                        f"Analyzing TSP sensitivity for '{param_name}' ({i+1}/{total_params}): "
+                        f"value {j+1}/{total_values}"
+                    )
+                current_algo_params = algo_params.copy()
+                current_algo_params[param_name] = val
+                params = {'max_iter': max_iter, **current_algo_params}
+                
+                fitnesses = []
+                for run in range(5):  # 5 runs per parameter value
+                    tsp_problem = create_tsp_problem(n_cities=n_cities, seed=self.seed + run)
+                    result = algo_func(distance_matrix=tsp_problem['distance_matrix'], seed=self.seed + run, **params)
+                    fitness = result['best_fitness'] if isinstance(result, dict) else result.best_fitness
+                    fitnesses.append(fitness)
+                
+                mean_fitness.append(np.mean(fitnesses))
+                std_fitness.append(np.std(fitnesses))
+            
+            results[param_name] = {
+                'param_values': param_values,
+                'mean_fitness': mean_fitness,
+                'std_fitness': std_fitness
+            }
+            
+        return results

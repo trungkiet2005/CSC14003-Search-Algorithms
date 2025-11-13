@@ -53,9 +53,9 @@ DEFAULT_ACO_CONFIG = AlgorithmConfig(
         "n_ants": 20,
         "alpha": 1.0,
         "beta": 2.0,
-        "evaporation_rate": 0.5,
-        "Q": 100,
-        "elitist_weight": 2.0
+        "evaporation_rate": 0.1,
+        "phi": 0.1,
+        "q0": 0.9,
     }
 )
 
@@ -268,8 +268,9 @@ PARAMETER_RANGES = {
         'n_ants': (10, 50),
         'alpha': (0.5, 2.0),
         'beta': (1.0, 5.0),
-        'evaporation_rate': (0.3, 0.7),
-        'Q': (50, 200)
+        'evaporation_rate': (0.01, 0.5),
+        'phi': (0.01, 0.5),
+        'q0': (0.5, 0.99)
     },
     'ABC': {
         'n_bees': (20, 50),
@@ -310,6 +311,14 @@ ALGORITHM_UI_CONFIG = {
         'c1': {'label': 'Cognitive Coefficient', 'default': DEFAULT_PSO_CONFIG.params['c1'], 'type': float, 'min': 0.0, 'max': 4.0},
         'c2': {'label': 'Social Coefficient', 'default': DEFAULT_PSO_CONFIG.params['c2'], 'type': float, 'min': 0.0, 'max': 4.0},
         'v_max_ratio': {'label': 'Velocity Limit', 'default': DEFAULT_PSO_CONFIG.params['v_max_ratio'], 'type': float, 'min': 0.05, 'max': 1.0},
+    },
+    'ACO': {
+        'n_ants': {'label': 'Ant Count', 'default': DEFAULT_ACO_CONFIG.params['n_ants'], 'type': int, 'min': 5, 'max': 100},
+        'alpha': {'label': 'Alpha (Pheromone Importance)', 'default': DEFAULT_ACO_CONFIG.params['alpha'], 'type': float, 'min': 0.1, 'max': 5.0},
+        'beta': {'label': 'Beta (Heuristic Importance)', 'default': DEFAULT_ACO_CONFIG.params['beta'], 'type': float, 'min': 0.1, 'max': 5.0},
+        'evaporation_rate': {'label': 'Evaporation Rate', 'default': DEFAULT_ACO_CONFIG.params['evaporation_rate'], 'type': float, 'min': 0.01, 'max': 1.0},
+        'phi': {'label': 'Local Update Rate (phi)', 'default': DEFAULT_ACO_CONFIG.params['phi'], 'type': float, 'min': 0.01, 'max': 1.0},
+        'q0': {'label': 'Pseudorandom Proportional (q0)', 'default': DEFAULT_ACO_CONFIG.params['q0'], 'type': float, 'min': 0.0, 'max': 1.0},
     },
     'ABC': {
         'n_bees': {'label': 'Colony Size', 'default': DEFAULT_ABC_CONFIG.params['n_bees'], 'type': int, 'min': 5, 'max': 100},

@@ -116,8 +116,8 @@ class VisualizationTab:
         layout.addWidget(algo_label)
         
         self.algo_menu = QComboBox()
-        self.algo_menu.addItems(["PSO", "ABC", "FA", "CS"])
-        self.algo_menu.currentTextChanged.connect(self._update_specific_params_widgets)
+        self.algo_menu.addItems(["PSO", "ABC", "FA", "CS", "ACO"])
+        self.algo_menu.currentTextChanged.connect(self._handle_algorithm_selection)
         self._style_combobox(self.algo_menu)
         layout.addWidget(self.algo_menu)
         
@@ -128,7 +128,8 @@ class VisualizationTab:
         layout.addWidget(problem_label)
         
         self.problem_menu = QComboBox()
-        self.problem_menu.addItems(["Sphere", "Rastrigin", "Rosenbrock", "Ackley"])
+        self.problem_menu.addItems(["Sphere", "Rastrigin", "Rosenbrock", "Ackley", "TSP"])
+        self.problem_menu.currentTextChanged.connect(self._handle_problem_selection)
         self._style_combobox(self.problem_menu)
         layout.addWidget(self.problem_menu)
         
@@ -162,7 +163,17 @@ class VisualizationTab:
         self.params_layout.setSpacing(6)
         
         # Basic parameters
-        self.dim_entry = self._create_input_field(self.params_layout, "Dimensions", "10")
+        self.dim_label = QLabel("Dimensions")
+        self.dim_label.setFont(QFont("Segoe UI", 9))
+        self.dim_label.setStyleSheet("color: white;")
+        self.params_layout.addWidget(self.dim_label)
+        
+        self.dim_entry = QLineEdit()
+        self.dim_entry.setPlaceholderText("10")
+        self.dim_entry.setText("10")
+        self._style_lineedit(self.dim_entry)
+        self.params_layout.addWidget(self.dim_entry)
+
         self.iter_entry = self._create_input_field(self.params_layout, "Max Iterations", "100")
         self.runs_entry = self._create_input_field(self.params_layout, "Number of Runs", "10")
         
@@ -406,6 +417,52 @@ class VisualizationTab:
                 self.sensitivity_param_checkboxes[param_name] = checkbox
             
 
+    def _handle_algorithm_selection(self, algorithm):
+        self._update_specific_params_widgets(algorithm)
+        
+        is_aco = (algorithm == "ACO")
+        
+        # Block signals to prevent infinite loops
+        self.problem_menu.blockSignals(True)
+        
+        if is_aco:
+            self.problem_menu.setCurrentText("TSP")
+            self.problem_menu.setEnabled(False)
+            self.dim_label.setText("Number of Cities")
+            self.dim_entry.setText("50") # Default city count for TSP
+            self.landscape_btn.setEnabled(False)
+        else:
+            if self.problem_menu.currentText() == "TSP":
+                self.problem_menu.setCurrentText("Sphere")
+            self.problem_menu.setEnabled(True)
+            self.dim_label.setText("Dimensions")
+            self.landscape_btn.setEnabled(True)
+            
+        self.problem_menu.blockSignals(False)
+
+    def _handle_problem_selection(self, problem):
+        is_tsp = (problem == "TSP")
+        
+        # Block signals to prevent infinite loops
+        self.algo_menu.blockSignals(True)
+        
+        if is_tsp:
+            self.algo_menu.setCurrentText("ACO")
+            self.algo_menu.setEnabled(False)
+            self.dim_label.setText("Number of Cities")
+            self.dim_entry.setText("50") # Default city count for TSP
+            self.landscape_btn.setEnabled(False)
+        else:
+            if self.algo_menu.currentText() == "ACO":
+                self.algo_menu.setCurrentText("PSO")
+            self.algo_menu.setEnabled(True)
+            self.dim_label.setText("Dimensions")
+            self.landscape_btn.setEnabled(True)
+            
+        self.algo_menu.blockSignals(False)
+        # We still need to update params when algorithm changes
+        self._update_specific_params_widgets()
+            
     def _create_results_area(self, parent_layout):
         results = QFrame()
         results.setStyleSheet("""
@@ -570,11 +627,17 @@ class VisualizationTab:
         prob = metadata['problem']
         dim = metadata['dim']
         
-        plot_convergence_comparison({algo: history}, title=f"Convergence: {algo} on {prob.capitalize()} (dim={dim})", log_scale=True, ax=ax)
+        y_label = "Distance" if prob == 'tsp' else "Fitness"
+        log_scale = False if prob == 'tsp' else True
         
-        final_fitness, initial_fitness = history[-1], history[0]
-        improvement = ((initial_fitness - final_fitness) / abs(initial_fitness)) * 100 if initial_fitness != 0 else 0
-        textstr = f'Initial: {initial_fitness:.4f}\nFinal: {final_fitness:.4f}\nImprovement: {improvement:.2f}%'
+        plot_convergence_comparison({algo: history}, title=f"Convergence: {algo} on {prob.capitalize()} (dim={dim})", log_scale=log_scale, ax=ax, ylabel=y_label)
+        
+        final_val, initial_val = history[-1], history[0]
+        improvement = ((initial_val - final_val) / abs(initial_val)) * 100 if initial_val != 0 else 0
+        
+        val_name = "Dist" if prob == 'tsp' else "Fit"
+        textstr = f'Initial {val_name}: {initial_val:.4f}\nFinal {val_name}: {final_val:.4f}\nImprovement: {improvement:.2f}%'
+        
         props = dict(boxstyle='round', facecolor='wheat', alpha=0.7)
         ax.text(0.98, 0.95, textstr, transform=ax.transAxes, fontsize=10, verticalalignment='top', horizontalalignment='right', bbox=props)
         
@@ -586,6 +649,9 @@ class VisualizationTab:
         all_histories, best_fitnesses = data['all_histories'], data['best_fitnesses']
         algo, prob, n_runs = metadata['algorithm'], metadata['problem'], metadata['n_runs']
         
+        y_label = "Distance" if prob == 'tsp' else "Fitness"
+        log_scale = False if prob == 'tsp' else True
+        
         fig.suptitle(f"Performance: {algo} on {prob.capitalize()} ({n_runs} runs)", fontsize=14, fontweight='bold')
         
         colors = sns.color_palette("husl", n_runs)
@@ -594,8 +660,9 @@ class VisualizationTab:
         ax1.plot(np.mean(all_histories, axis=0), 'k--', linewidth=2, alpha=0.8, label='Mean')
         ax1.set_title(f"Convergence Across {n_runs} Runs", fontsize=12)
         ax1.set_xlabel("Iteration", fontsize=10)
-        ax1.set_ylabel("Fitness (log scale)", fontsize=10)
-        ax1.set_yscale('log')
+        ax1.set_ylabel(f"{y_label}{' (log scale)' if log_scale else ''}", fontsize=10)
+        if log_scale:
+            ax1.set_yscale('log')
         ax1.grid(True, alpha=0.2)
         ax1.legend(fontsize=8)
         
@@ -606,7 +673,8 @@ class VisualizationTab:
         ax1.text(0.98, 0.95, stats_text_ax1, transform=ax1.transAxes, fontsize=9,
                  verticalalignment='top', horizontalalignment='right', bbox=props_ax1)
         
-        plot_boxplot_comparison({algo: best_fitnesses}, title="Final Fitness Distribution", ax=ax2)
+        boxplot_title = f"Final {y_label} Distribution"
+        plot_boxplot_comparison({algo: best_fitnesses}, title=boxplot_title, ax=ax2, ylabel=f"Final {y_label}")
         std_fit = np.std(best_fitnesses)
         stats_text_ax2 = f'Mean: {mean_fit:.4f}\nStd: {std_fit:.4f}'
         props_ax2 = dict(boxstyle='round', facecolor='lightblue', alpha=0.7)
@@ -639,6 +707,8 @@ class VisualizationTab:
         # Get the UI config for the current algorithm
         algo_ui_config = ALGORITHM_UI_CONFIG.get(algo, {})
 
+        y_label = "Distance" if prob == 'tsp' else "Fitness"
+
         for i in range(num_params):
             param_name = param_names[i]
             param_data = data[param_name]
@@ -654,7 +724,8 @@ class VisualizationTab:
             plot_parameter_sensitivity(param_values, mean_fitness, std_fitness, 
                                        param_label, 
                                        title=f"Parameter: {param_label}",
-                                       ax=ax)
+                                       ax=ax,
+                                       ylabel=y_label)
             
             best_idx = np.argmin(mean_fitness)
             best_param, best_fitness = param_values[best_idx], mean_fitness[best_idx]
@@ -669,6 +740,8 @@ class VisualizationTab:
         return fig
 
     def _plot_landscape(self, data, metadata):
+        if metadata['problem'] == 'tsp':
+            return None
         problem_func, problem_info = get_problem(metadata['problem'], dim=2)
         bounds = problem_info['bounds']
         best_position = data.get('best_position')
@@ -776,11 +849,18 @@ class VisualizationTab:
         algorithm_config = AlgorithmConfig(name=algorithm_name, params=algo_params)
 
         # --- Problem Configuration ---
-        problem_config = ProblemConfig(
-            name=problem_name,
-            dim=int(self.dim_entry.text() or 10),
-            max_iter=int(self.iter_entry.text() or 100)
-        )
+        if problem_name == 'tsp':
+            problem_config = ProblemConfig(
+                name='tsp',
+                dim=int(self.dim_entry.text() or 50), # Number of cities for TSP
+                max_iter=int(self.iter_entry.text() or 100)
+            )
+        else:
+            problem_config = ProblemConfig(
+                name=problem_name,
+                dim=int(self.dim_entry.text() or 10),
+                max_iter=int(self.iter_entry.text() or 100)
+            )
 
         # --- Experiment Configuration ---
         exp_config = ExperimentConfig(

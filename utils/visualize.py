@@ -35,6 +35,7 @@ def plot_convergence_comparison(histories_dict: Dict[str, List[float]],
                                save_path: Optional[str] = None,
                                log_scale: bool = False,
                                xlabel: str = "Iteration",
+                               ylabel: str = "Fitness",
                                ax: Optional[plt.Axes] = None,
                                final_fitness_values: Optional[Dict[str, float]] = None) -> None:
     """
@@ -46,6 +47,7 @@ def plot_convergence_comparison(histories_dict: Dict[str, List[float]],
         save_path: Path to save figure
         log_scale: Use log scale for y-axis
         xlabel: Label for x-axis
+        ylabel: Label for y-axis
         ax: Matplotlib axes (if None, creates new figure)
         final_fitness_values: Optional dict of {algorithm_name: final_fitness} to annotate plot
     """
@@ -67,7 +69,7 @@ def plot_convergence_comparison(histories_dict: Dict[str, List[float]],
 
     ax.set_title(title, fontsize=16, fontweight='bold')
     ax.set_xlabel(xlabel, fontsize=13)
-    ax.set_ylabel("Fitness" + (" (log scale)" if log_scale else ""), fontsize=13)
+    ax.set_ylabel(ylabel + (" (log scale)" if log_scale else ""), fontsize=13)
     
     if log_scale:
         ax.set_yscale('log')
@@ -398,7 +400,8 @@ def plot_parameter_sensitivity(param_values: List,
                                param_name: str,
                                title: str = "Parameter Sensitivity Analysis",
                                save_path: Optional[str] = None,
-                               ax: Optional[plt.Axes] = None) -> None:
+                               ax: Optional[plt.Axes] = None,
+                               ylabel: str = "Fitness") -> None:
     """
     Plot parameter sensitivity analysis
     
@@ -410,6 +413,7 @@ def plot_parameter_sensitivity(param_values: List,
         title: Plot title
         save_path: Path to save figure
         ax: Matplotlib axes
+        ylabel: Y-axis label
     """
     if ax is None:
         fig, ax = plt.subplots(figsize=(12, 7))
@@ -424,7 +428,7 @@ def plot_parameter_sensitivity(param_values: List,
                label='Mean ± Std')
     
     ax.set_xlabel(param_name, fontsize=13)
-    ax.set_ylabel('Fitness', fontsize=13)
+    ax.set_ylabel(ylabel, fontsize=13)
     ax.set_title(title, fontsize=16, fontweight='bold')
     ax.grid(True, alpha=0.3, linestyle='--')
     ax.legend(fontsize=11)
