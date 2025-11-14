@@ -222,7 +222,8 @@ def run_hill_climbing(objective_func: Callable, dim: int,
                      adaptive_step: bool = True,
                      random_restart: int = 5,
                      minimize: bool = True, 
-                     seed: Optional[int] = None) -> dict:
+                     seed: Optional[int] = None,
+                     **kwargs) -> dict:
     """
     Convenience function to run Hill Climbing
     
@@ -244,7 +245,8 @@ def run_stochastic_hill_climbing(objective_func: Callable, dim: int,
                                  step_size: float = 0.1,
                                  n_neighbors: int = 20,
                                  minimize: bool = True,
-                                 seed: Optional[int] = None) -> dict:
+                                 seed: Optional[int] = None,
+                                 **kwargs) -> dict:
     """Run Stochastic Hill Climbing"""
     shc = StochasticHillClimbing(
         step_size=step_size,
