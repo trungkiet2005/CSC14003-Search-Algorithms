@@ -1,4 +1,3 @@
-# File 3: comparison_tab_new.py - PyQt6 version
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, 
                               QComboBox, QLineEdit, QScrollArea, QFrame, QTextEdit,
                               QFileDialog)
@@ -355,7 +354,7 @@ class ComparisonTab:
             
             self._add_section_separator()
             self._add_section_label("Ant Colony Optimization")
-            self._add_param_entry("ACO_n_ants", "Ant Population", "20")
+            self._add_param_entry("ACO_population_size", "Population Size", "20")
             self._add_param_entry("ACO_alpha", "Pheromone Weight (α)", "1.0")
             self._add_param_entry("ACO_beta", "Heuristic Weight (β)", "2.0")
             self._add_param_entry("ACO_evaporation_rate", "Evaporation Rate (ρ)", "0.1")
@@ -375,7 +374,7 @@ class ComparisonTab:
             
             if "PSO vs HC" in experiment:
                 self._add_section_label("Particle Swarm Optimization")
-                self._add_param_entry("PSO_n_particles", "Swarm Size", "30")
+                self._add_param_entry("PSO_population_size", "Population Size", "30")
                 self._add_param_entry("PSO_w", "Inertia Weight", "0.7298")
                 self._add_param_entry("PSO_c1", "Cognitive (c₁)", "1.49618")
                 self._add_param_entry("PSO_c2", "Social (c₂)", "1.49618")
@@ -385,17 +384,17 @@ class ComparisonTab:
                 self._add_param_entry("HC_step_size", "Step Size", "0.1")
             elif "ABC vs GA" in experiment:
                 self._add_section_label("Artificial Bee Colony")
-                self._add_param_entry("ABC_n_bees", "Colony Size", "30")
+                self._add_param_entry("ABC_population_size", "Population Size", "30")
                 self._add_param_entry("ABC_limit", "Scout Limit", "auto")
                 
                 self._add_section_separator()
                 self._add_section_label("Genetic Algorithm")
-                self._add_param_entry("GA_pop_size", "Population Size", "50")
+                self._add_param_entry("GA_population_size", "Population Size", "50")
                 self._add_param_entry("GA_crossover_rate", "Crossover Rate", "0.8")
                 self._add_param_entry("GA_mutation_rate", "Mutation Rate", "0.1")
             elif "FA vs SA" in experiment:
                 self._add_section_label("Firefly Algorithm")
-                self._add_param_entry("FA_n_fireflies", "Firefly Population", "25")
+                self._add_param_entry("FA_population_size", "Population Size", "25")
                 self._add_param_entry("FA_alpha", "Randomness (α)", "0.5")
                 self._add_param_entry("FA_beta0", "Attractiveness (β₀)", "1.0")
                 self._add_param_entry("FA_gamma", "Absorption (γ)", "1.0")
@@ -406,7 +405,7 @@ class ComparisonTab:
                 self._add_param_entry("SA_alpha", "Cooling Factor (α)", "0.98")
             elif "CS vs SA" in experiment:
                 self._add_section_label("Cuckoo Search")
-                self._add_param_entry("CS_n_nests", "Host Nests", "25")
+                self._add_param_entry("CS_population_size", "Population Size", "25")
                 self._add_param_entry("CS_pa", "Discovery Rate (pₐ)", "0.25")
                 
                 self._add_section_separator()
@@ -582,8 +581,8 @@ class ComparisonTab:
                              title=f"{algo_name}\nDistance: {res['best_distance']:.2f}", ax=ax)
         else:
             fig, ax = plt.subplots(figsize=(12, 7))
-            histories = {s.algorithm_name: s.results[0]['history'] for s in data['stats_list'] 
-                        if s.results and 'history' in s.results[0]}
+            histories = {s.algorithm_name: s.results[0].history for s in data['stats_list'] 
+                        if s.results and hasattr(s.results[0], 'history')}
             final_fitnesses = {s.algorithm_name: s.mean_fitness for s in data['stats_list']}
             plot_convergence_comparison(histories, 
                                       title=f"Convergence: {data['metadata']['problem'].capitalize()} (dim={data['metadata']['dim']})", 

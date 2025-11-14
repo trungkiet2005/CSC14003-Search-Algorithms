@@ -1,8 +1,3 @@
-"""algorithms/traditional/genetic_algorithm.py - Improved Genetic Algorithm
-
-Reference: Holland, J. H. (1992). Genetic algorithms. Scientific American, 267(1), 66-73.
-"""
-
 import numpy as np
 from typing import Callable, Tuple, Optional
 from ..base import PopulationBasedOptimizer, OptimizationResult, run_with_timing
@@ -20,26 +15,23 @@ class GeneticAlgorithm(PopulationBasedOptimizer):
     4. Elitism: Preserve best solutions
     
     Attributes:
-        pop_size: Population size
         crossover_rate: Probability of crossover (0-1)
         mutation_rate: Probability of mutation (0-1)
         tournament_size: Size of tournament for selection
         elitism_ratio: Fraction of population preserved as elite
     """
     
-    def __init__(self, pop_size: int = 50, 
+    def __init__(self, population_size: int = 50, 
                  crossover_rate: float = 0.8,
                  mutation_rate: float = 0.1,
                  tournament_size: int = 3,
                  elitism_ratio: float = 0.1,
                  seed: Optional[int] = None):
-        super().__init__(population_size=pop_size, seed=seed)
-        self.pop_size = pop_size
+        super().__init__(population_size=population_size, seed=seed)
         self.crossover_rate = crossover_rate
         self.mutation_rate = mutation_rate
         self.tournament_size = tournament_size
         self.elitism_ratio = elitism_ratio
-        self.name = "GA"
     
     @run_with_timing
     def optimize(self, objective_func: Callable, 
@@ -65,8 +57,8 @@ class GeneticAlgorithm(PopulationBasedOptimizer):
         
         # Initialize population
         if initial_population is not None:
-            if len(initial_population) != self.pop_size:
-                raise ValueError(f"Initial population size {len(initial_population)} does not match pop_size {self.pop_size}")
+            if len(initial_population) != self.population_size:
+                raise ValueError(f"Initial population size {len(initial_population)} does not match pop_size {self.population_size}")
             population = initial_population.copy()
         else:
             population = self._initialize_population(dim, lower, upper)
@@ -85,7 +77,7 @@ class GeneticAlgorithm(PopulationBasedOptimizer):
         convergence_iter = None
         
         # Calculate number of elites
-        n_elites = max(1, int(self.elitism_ratio * self.pop_size))
+        n_elites = max(1, int(self.elitism_ratio * self.population_size))
         
         for generation in range(max_iter):
             # ==================== SELECTION ====================
@@ -96,11 +88,10 @@ class GeneticAlgorithm(PopulationBasedOptimizer):
                 elite_indices = np.argsort(fitness)[-n_elites:]
             
             elites = population[elite_indices].copy()
-            elite_fitness = fitness[elite_indices].copy()
             
             # Select parents for reproduction
             parents = self._tournament_selection(
-                population, fitness, self.pop_size - n_elites, minimize
+                population, fitness, self.population_size - n_elites, minimize
             )
             
             # ==================== CROSSOVER ====================
@@ -116,7 +107,7 @@ class GeneticAlgorithm(PopulationBasedOptimizer):
                 
                 offspring.extend([child1, child2])
             
-            offspring = np.array(offspring[:self.pop_size - n_elites])
+            offspring = np.array(offspring[:self.population_size - n_elites])
             
             # ==================== MUTATION ====================
             offspring = self._mutate(offspring, lower, upper, dim)
@@ -235,27 +226,3 @@ class GeneticAlgorithm(PopulationBasedOptimizer):
                 offspring[i] = self._clip_bounds(offspring[i], lower, upper)
         
         return offspring
-
-
-def run_ga(objective_func: Callable, dim: int, bounds: Tuple[float, float],
-          pop_size: int = 50, max_iter: int = 100,
-          crossover_rate: float = 0.8, mutation_rate: float = 0.1,
-          tournament_size: int = 3, elitism_ratio: float = 0.1,
-          minimize: bool = True, seed: Optional[int] = None,
-          initial_population: Optional[np.ndarray] = None) -> dict:
-    """
-    Convenience function to run Genetic Algorithm
-    
-    Returns dictionary for backward compatibility
-    """
-    ga = GeneticAlgorithm(
-        pop_size=pop_size, 
-        crossover_rate=crossover_rate,
-        mutation_rate=mutation_rate,
-        tournament_size=tournament_size,
-        elitism_ratio=elitism_ratio,
-        seed=seed
-    )
-    result = ga.optimize(objective_func, dim, bounds, max_iter, minimize,
-                         initial_population=initial_population)
-    return result.to_dict()

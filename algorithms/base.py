@@ -1,5 +1,3 @@
-"""algorithms/base.py - Base classes for all algorithms"""
-
 from abc import ABC, abstractmethod
 import numpy as np
 from typing import Dict, Any, Tuple, Optional, Callable
@@ -109,8 +107,17 @@ class ContinuousOptimizer(BaseAlgorithm):
 class DiscreteOptimizer(BaseAlgorithm):
     """Base class for discrete optimization algorithms"""
     
-    def __init__(self, seed: Optional[int] = None):
+    def __init__(self, population_size: int = 0, seed: Optional[int] = None):
         super().__init__(seed)
+        if population_size > 0:
+            self.population_size = population_size
+
+
+class DiscretePopulationBasedOptimizer(DiscreteOptimizer):
+    """Base class for population-based discrete optimization algorithms"""
+    
+    def __init__(self, population_size: int, seed: Optional[int] = None):
+        super().__init__(population_size=population_size, seed=seed)
 
 
 class PopulationBasedOptimizer(ContinuousOptimizer):

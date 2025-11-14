@@ -1,4 +1,3 @@
-# File 1: app.py - PyQt6 version
 from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QVBoxLayout, QTabWidget
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont

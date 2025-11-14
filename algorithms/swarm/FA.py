@@ -1,9 +1,3 @@
-"""algorithms/swarm/fa.py - Improved Firefly Algorithm
-
-Reference: Yang, X. S. (2009). Firefly algorithms for multimodal optimization.
-In Stochastic algorithms: foundations and applications (pp. 169-178).
-"""
-
 import numpy as np
 from typing import Callable, Tuple, Optional
 from ..base import PopulationBasedOptimizer, OptimizationResult, run_with_timing
@@ -16,23 +10,19 @@ class FA(PopulationBasedOptimizer):
     by the objective function value.
     
     Attributes:
-        n_fireflies: Number of fireflies
         alpha: Randomization parameter (exploration)
         beta0: Attractiveness at distance r=0
         gamma: Light absorption coefficient
-        alpha_decay: Decay rate for alpha (adaptive randomization)
     """
     
-    def __init__(self, n_fireflies: int = 25, 
+    def __init__(self, population_size: int = 25, 
                  alpha: float = 0.5,
                  beta0: float = 1.0, gamma: float = 1.0,
                  seed: Optional[int] = None):
-        super().__init__(population_size=n_fireflies, seed=seed)
-        self.n_fireflies = n_fireflies
-        self.alpha_initial = alpha
+        super().__init__(population_size=population_size, seed=seed)
+        self.alpha = alpha
         self.beta0 = beta0
         self.gamma = gamma
-        self.name = "FA"
     
     @run_with_timing
     def optimize(self, objective_func: Callable, 
@@ -58,8 +48,8 @@ class FA(PopulationBasedOptimizer):
         
         # Initialize firefly positions
         if initial_population is not None:
-            if len(initial_population) != self.n_fireflies:
-                raise ValueError(f"Initial population size {len(initial_population)} does not match n_fireflies {self.n_fireflies}")
+            if len(initial_population) != self.population_size:
+                raise ValueError(f"Initial population size {len(initial_population)} does not match population_size {self.population_size}")
             fireflies = initial_population.copy()
         else:
             fireflies = self._initialize_population(dim, lower, upper)
@@ -88,8 +78,8 @@ class FA(PopulationBasedOptimizer):
             fireflies_old = fireflies.copy()
             
             # Move fireflies
-            for i in range(self.n_fireflies):
-                for j in range(self.n_fireflies):
+            for i in range(self.population_size):
+                for j in range(self.population_size):
                     # If firefly j is brighter than firefly i
                     if light_intensity[j] > light_intensity[i]:
                         # Calculate Euclidean distance
@@ -104,7 +94,7 @@ class FA(PopulationBasedOptimizer):
                         # Move firefly i towards j
                         # x_i = x_i + β * (x_j - x_i) + α * (rand - 0.5)
                         attraction = beta * (fireflies_old[j] - fireflies_old[i])
-                        randomization = self.alpha_initial * scale * (self.rng.random(dim) - 0.5)
+                        randomization = self.alpha * scale * (self.rng.random(dim) - 0.5)
                         
                         fireflies[i] += attraction + randomization
                         
@@ -145,21 +135,3 @@ class FA(PopulationBasedOptimizer):
             final_fireflies=fireflies,
             final_intensities=intensity
         )
-
-
-def run_fa(objective_func: Callable, dim: int, bounds: Tuple[float, float],
-          n_fireflies: int = 25, max_iter: int = 100,
-          alpha: float = 0.5,
-          beta0: float = 1.0, gamma: float = 1.0,
-          minimize: bool = True, seed: Optional[int] = None,
-          initial_population: Optional[np.ndarray] = None) -> dict:
-    """
-    Convenience function to run Firefly Algorithm
-    
-    Returns dictionary for backward compatibility
-    """
-    fa = FA(n_fireflies=n_fireflies, alpha=alpha,
-            beta0=beta0, gamma=gamma, seed=seed)
-    result = fa.optimize(objective_func, dim, bounds, max_iter, minimize,
-                         initial_population=initial_population)
-    return result.to_dict()

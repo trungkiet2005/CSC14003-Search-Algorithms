@@ -1,5 +1,3 @@
-"""main.py - Main entry point for the application"""
-
 import sys
 from pathlib import Path
 

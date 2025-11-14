@@ -2,14 +2,14 @@ import numpy as np
 import time
 from typing import Dict, List, Tuple
 
-# Import algorithms
-from algorithms.swarm.PSO import run_pso
-from algorithms.swarm.ABC import run_abc
-from algorithms.swarm.FA import run_fa
-from algorithms.swarm.CS import run_cs
-from algorithms.swarm.ACO import run_aco
+# Import algorithm classes
+from algorithms.swarm.PSO import PSO
+from algorithms.swarm.ABC import ABC
+from algorithms.swarm.FA import FA
+from algorithms.swarm.CS import CS
+from algorithms.swarm.ACO import ACO
 
-from algorithms.base import generate_initial_population
+from algorithms.base import generate_initial_population, OptimizationResult
 
 # Import problems
 from problems.continuous import get_problem
@@ -34,53 +34,38 @@ class VisualizationRunner:
         if exp_config.problem.name == 'tsp':
             return self._run_tsp_visualization_analysis(exp_config, sensitivity_params, progress_callback)
             
-        # Extract parameters from the experiment configuration
         problem_config = exp_config.problem
-        algo_config = exp_config.algorithms[0]  # Visualization uses one algorithm
+        algo_config = exp_config.algorithms[0]
         
-        algorithm = algo_config.name
-        problem = problem_config.name
-        dim = problem_config.dim
-        max_iter = problem_config.max_iter
-        n_runs = exp_config.n_runs
-        algo_specific_params = algo_config.params
-
-        # Get algorithm function and parameters
-        algo_func, algo_params = self._get_algorithm(algorithm, algo_specific_params)
-        problem_func, problem_info = get_problem(problem, dim)
+        algorithm_class, algo_params = self._get_algorithm(algo_config.name, algo_config.params)
+        problem_func, problem_info = get_problem(problem_config.name, problem_config.dim)
         bounds = problem_info['bounds']
 
-        # Generate a single initial population for deterministic runs, avoiding the origin
-        lower, upper = bounds
-        # Define a radius for the exclusion zone, e.g., 10% of the range
-        avoid_radius = (upper - lower) * 0.5
+        pop_size = algo_params.get('population_size', 30)
         
-        pop_size_key = next((k for k in ['n_particles', 'n_bees', 'n_fireflies', 'n_nests', 'pop_size'] if k in algo_params), None)
-        pop_size = algo_params.get(pop_size_key, 30)
         initial_pop = generate_initial_population(
-            dim, bounds, pop_size, self.seed, avoid_origin_radius=avoid_radius
+            problem_config.dim, bounds, pop_size, self.seed, avoid_origin_radius=(bounds[1] - bounds[0]) * 0.5
         )
         
         if progress_callback: progress_callback("Calculating convergence...")
         convergence_data = self._get_convergence_data(
-            algo_func, algo_params, problem_func, bounds, dim, max_iter,
+            algorithm_class, algo_params, problem_func, bounds, problem_config.dim, problem_config.max_iter,
             initial_population=initial_pop
         )
         
         performance_data = self._get_performance_data(
-            algo_func, algo_params, problem_func, bounds, dim, max_iter, n_runs,
+            algorithm_class, algo_params, problem_func, bounds, problem_config.dim, problem_config.max_iter, exp_config.n_runs,
             progress_callback
         )
         
         sensitivity_data = self._get_sensitivity_data(
-            algorithm, algo_func, algo_params, problem_func, bounds, dim, max_iter, sensitivity_params,
+            algo_config.name, algorithm_class, algo_params, problem_func, bounds, problem_config.dim, problem_config.max_iter, sensitivity_params,
             progress_callback
         )
         
-        # For landscape, we need a 2D population
         landscape_data = self._get_landscape_data(
-            algo_func, algo_params, problem_func, bounds, max_iter,
-            progress_callback, pop_size=pop_size, avoid_radius=avoid_radius
+            algorithm_class, algo_params, problem_func, bounds, problem_config.max_iter,
+            progress_callback, pop_size=pop_size, avoid_radius=(bounds[1] - bounds[0]) * 0.5
         )
         
         return {
@@ -89,293 +74,186 @@ class VisualizationRunner:
             'sensitivity': sensitivity_data,
             'landscape': landscape_data,
             'metadata': {
-                'algorithm': algorithm,
-                'problem': problem,
-                'dim': dim,
-                'n_runs': n_runs
+                'algorithm': algo_config.name,
+                'problem': problem_config.name,
+                'dim': problem_config.dim,
+                'n_runs': exp_config.n_runs
             }
         }
     
-    def _get_algorithm(self, algorithm: str, algo_specific_params: Dict = None) -> Tuple:
-        """Get algorithm function and parameters, merging defaults with specific ones."""
+    def _get_algorithm(self, algorithm: str, algo_specific_params: Dict = None) -> Tuple[type, Dict]:
+        """Get algorithm class and parameters, merging defaults with specific ones."""
         default_configs = {
-            'PSO': DEFAULT_PSO_CONFIG,
-            'ABC': DEFAULT_ABC_CONFIG,
-            'FA': DEFAULT_FA_CONFIG,
-            'CS': DEFAULT_CS_CONFIG,
-            'ACO': DEFAULT_ACO_CONFIG
+            'PSO': DEFAULT_PSO_CONFIG, 'ABC': DEFAULT_ABC_CONFIG, 'FA': DEFAULT_FA_CONFIG,
+            'CS': DEFAULT_CS_CONFIG, 'ACO': DEFAULT_ACO_CONFIG
+        }
+        class_map = {
+            'PSO': PSO, 'ABC': ABC, 'FA': FA, 'CS': CS, 'ACO': ACO
         }
         
-        func_map = {
-            'PSO': run_pso, 'ABC': run_abc, 'FA': run_fa, 'CS': run_cs, 'ACO': run_aco
-        }
-        
-        algo_func = func_map[algorithm]
-        
-        # Use the params from the default config object
+        algo_class = class_map[algorithm]
         params = default_configs.get(algorithm).params.copy()
         if algo_specific_params:
             params.update(algo_specific_params)
             
-        return algo_func, params
+        return algo_class, params
     
-    def _get_convergence_data(self, algo_func, algo_params, problem_func, bounds, 
+    def _get_convergence_data(self, algo_class, algo_params, problem_func, bounds, 
                               dim, max_iter, initial_population=None):
-        """1. CONVERGENCE ABILITY DATA"""
-        params = {'dim': dim, 'bounds': bounds, 'max_iter': max_iter, **algo_params}
-        result = algo_func(objective_func=problem_func, seed=self.seed, 
-                           initial_population=initial_population, **params)
-        history = result['history'] if isinstance(result, dict) else result.history
-        return {'history': history}
+        instance = algo_class(seed=self.seed, **algo_params)
+        result = instance.optimize(
+            objective_func=problem_func, dim=dim, bounds=bounds, max_iter=max_iter,
+            initial_population=initial_population
+        )
+        return {'history': result.history}
     
-    def _get_performance_data(self, algo_func, algo_params, problem_func, bounds,
+    def _get_performance_data(self, algo_class, algo_params, problem_func, bounds,
                               dim, max_iter, n_runs, progress_callback=None):
-        """2. COMPARATIVE PERFORMANCE DATA"""
-        params = {'dim': dim, 'bounds': bounds, 'max_iter': max_iter, **algo_params}
-        
-        all_histories = []
-        best_fitnesses = []
-        
+        all_histories, best_fitnesses = [], []
         for run in range(n_runs):
             if progress_callback:
                 progress_callback(f"Assessing performance... (run {run + 1}/{n_runs})")
-            result = algo_func(objective_func=problem_func, seed=self.seed + run, **params)
-            history = result['history'] if isinstance(result, dict) else result.history
-            all_histories.append(history)
-            best_fitnesses.append(history[-1])
-            
+            instance = algo_class(seed=self.seed + run, **algo_params)
+            result = instance.optimize(
+                objective_func=problem_func, dim=dim, bounds=bounds, max_iter=max_iter
+            )
+            all_histories.append(result.history)
+            best_fitnesses.append(result.best_fitness)
         return {'all_histories': all_histories, 'best_fitnesses': best_fitnesses}
     
-    def _get_sensitivity_data(self, algorithm, algo_func, algo_params, problem_func,
+    def _get_sensitivity_data(self, algorithm_name, algo_class, algo_params, problem_func,
                               bounds, dim, max_iter, sensitivity_params: List[str] = None,
                               progress_callback=None):
-        """3. PARAMETER SENSITIVITY ANALYSIS DATA"""
-        if not sensitivity_params:
-            return {}
-
+        if not sensitivity_params: return {}
         results = {}
-        
         total_params = len(sensitivity_params)
         for i, param_name in enumerate(sensitivity_params):
-            param_range_info = PARAMETER_RANGES.get(algorithm, {}).get(param_name)
-            
-            if not param_range_info:
-                continue
+            param_range_info = PARAMETER_RANGES.get(algorithm_name, {}).get(param_name)
+            if not param_range_info: continue
 
-            param_values = None
-            actual_param_name = param_name
-
-            # Special handling for limit_factor
-            if param_name == 'limit_factor' and algorithm == 'ABC':
+            param_values, actual_param_name = None, param_name
+            if param_name == 'limit_factor' and algorithm_name == 'ABC':
                 if isinstance(param_range_info, list):
-                    n_bees = algo_params.get('n_bees', 30)
-                    param_values = [int(f * dim * n_bees) for f in param_range_info]
-                    actual_param_name = 'limit' # We are actually modifying the 'limit' param
-            else:
-                # Standard parameter handling
-                if isinstance(param_range_info, tuple) and len(param_range_info) == 2:
-                    param_values = np.linspace(param_range_info[0], param_range_info[1], 5)
-                    if 'n_' in param_name or 'pop_size' in param_name:
-                        param_values = np.round(param_values).astype(int)
-                elif isinstance(param_range_info, list):
-                    param_values = param_range_info
-            
-            if param_values is None:
-                continue
-
-            mean_fitness = []
-            std_fitness = []
-
-            total_values = len(param_values)
-            for j, val in enumerate(param_values):
-                if progress_callback:
-                    progress_callback(
-                        f"Analyzing sensitivity for '{param_name}' ({i+1}/{total_params}): "
-                        f"value {j+1}/{total_values}"
-                    )
-                current_algo_params = algo_params.copy()
-                current_algo_params[actual_param_name] = val
-                params = {'dim': dim, 'bounds': bounds, 'max_iter': max_iter, **current_algo_params}
-                
-                fitnesses = []
-                for run in range(5):  # 5 runs per parameter value
-                    result = algo_func(objective_func=problem_func, seed=self.seed + run, **params)
-                    fitness = result['best_fitness'] if isinstance(result, dict) else result.best_fitness
-                    fitnesses.append(fitness)
-                
-                mean_fitness.append(np.mean(fitnesses))
-                std_fitness.append(np.std(fitnesses))
-            
-            results[param_name] = {
-                'param_values': param_values,
-                'mean_fitness': mean_fitness,
-                'std_fitness': std_fitness
-            }
-            
-        return results
-    
-    def _get_landscape_data(self, algo_func, algo_params, problem_func, bounds,
-                            max_iter, progress_callback=None, pop_size=30, avoid_radius=0.0):
-        """4. 3D LANDSCAPE DATA"""
-        if progress_callback: progress_callback("Computing landscape (running algorithm)...")
-        
-        # Generate a 2D initial population for the landscape plot, avoiding the origin
-        initial_pop_2d = generate_initial_population(
-            dim=2, bounds=bounds, pop_size=pop_size, seed=self.seed, 
-            avoid_origin_radius=avoid_radius
-        )
-        
-        params_2d = {'dim': 2, 'bounds': bounds, 'max_iter': max_iter, **algo_params}
-        result = algo_func(objective_func=problem_func, seed=self.seed, 
-                           initial_population=initial_pop_2d, **params_2d)
-        best_position = result['best_position'] if isinstance(result, dict) else result.best_position
-        best_fitness = result['best_fitness'] if isinstance(result, dict) else result.best_fitness
-        
-        lower, upper = bounds
-        resolution = 50
-        x = np.linspace(lower, upper, resolution)
-        y = np.linspace(lower, upper, resolution)
-        X, Y = np.meshgrid(x, y)
-        Z = np.zeros_like(X)
-        
-        for i in range(resolution):
-            if progress_callback:
-                progress_callback(f"Computing landscape... (row {i + 1}/{resolution})")
-            for j in range(resolution):
-                Z[i, j] = problem_func([X[i, j], Y[i, j]])
-                
-        return {
-            'best_position': best_position,
-            'best_fitness': best_fitness,
-            'X': X, 'Y': Y, 'Z': Z
-        }
-
-    def _run_tsp_visualization_analysis(self, exp_config: ExperimentConfig,
-                                      sensitivity_params: List[str] = None,
-                                      progress_callback=None) -> Dict:
-        # Extract parameters
-        problem_config = exp_config.problem
-        algo_config = exp_config.algorithms[0]
-        
-        algorithm = algo_config.name
-        problem_name = problem_config.name
-        n_cities = problem_config.dim
-        max_iter = problem_config.max_iter
-        n_runs = exp_config.n_runs
-        algo_specific_params = algo_config.params
-
-        # Get algorithm function and parameters
-        algo_func, algo_params = self._get_algorithm(algorithm, algo_specific_params)
-        
-        # Create TSP problem
-        tsp_problem = create_tsp_problem(n_cities=n_cities, seed=self.seed)
-        distance_matrix = tsp_problem['distance_matrix']
-
-        if progress_callback: progress_callback("Calculating convergence for TSP...")
-        convergence_data = self._get_tsp_convergence_data(
-            algo_func, algo_params, distance_matrix, max_iter
-        )
-        
-        performance_data = self._get_tsp_performance_data(
-            algo_func, algo_params, n_cities, max_iter, n_runs,
-            progress_callback
-        )
-        
-        sensitivity_data = self._get_tsp_sensitivity_data(
-            algorithm, algo_func, algo_params, n_cities, max_iter, sensitivity_params,
-            progress_callback
-        )
-        
-        return {
-            'convergence': convergence_data,
-            'performance': performance_data,
-            'sensitivity': sensitivity_data,
-            'landscape': "Not applicable for TSP.", # Placeholder
-            'metadata': {
-                'algorithm': algorithm,
-                'problem': problem_name,
-                'dim': n_cities,
-                'n_runs': n_runs
-            }
-        }
-
-    def _get_tsp_convergence_data(self, algo_func, algo_params, distance_matrix, max_iter):
-        params = {'max_iter': max_iter, **algo_params}
-        result = algo_func(distance_matrix=distance_matrix, seed=self.seed, **params)
-        history = result['history'] if isinstance(result, dict) else result.history
-        return {'history': history}
-
-    def _get_tsp_performance_data(self, algo_func, algo_params, n_cities, max_iter, n_runs, progress_callback=None):
-        params = {'max_iter': max_iter, **algo_params}
-        
-        all_histories = []
-        best_fitnesses = []
-        
-        for run in range(n_runs):
-            if progress_callback:
-                progress_callback(f"Assessing TSP performance... (run {run + 1}/{n_runs})")
-            
-            tsp_problem = create_tsp_problem(n_cities=n_cities, seed=self.seed + run)
-            
-            result = algo_func(distance_matrix=tsp_problem['distance_matrix'], seed=self.seed + run, **params)
-            history = result['history'] if isinstance(result, dict) else result.history
-            all_histories.append(history)
-            best_fitnesses.append(history[-1])
-            
-        return {'all_histories': all_histories, 'best_fitnesses': best_fitnesses}
-
-    def _get_tsp_sensitivity_data(self, algorithm, algo_func, algo_params, n_cities, max_iter, sensitivity_params: List[str] = None, progress_callback=None):
-        if not sensitivity_params:
-            return {}
-
-        results = {}
-
-        total_params = len(sensitivity_params)
-        for i, param_name in enumerate(sensitivity_params):
-            param_range_info = PARAMETER_RANGES.get(algorithm, {}).get(param_name)
-            
-            if not param_range_info:
-                continue
-
-            param_values = None
-            if isinstance(param_range_info, tuple) and len(param_range_info) == 2:
+                    pop_size = algo_params.get('population_size', 30)
+                    param_values = [int(f * dim * pop_size) for f in param_range_info]
+                    actual_param_name = 'limit'
+            elif isinstance(param_range_info, tuple) and len(param_range_info) == 2:
                 param_values = np.linspace(param_range_info[0], param_range_info[1], 5)
-                if 'n_' in param_name:
+                if param_name == 'population_size':
                     param_values = np.round(param_values).astype(int)
             elif isinstance(param_range_info, list):
                 param_values = param_range_info
             
-            if param_values is None:
-                continue
+            if param_values is None: continue
 
-            mean_fitness = []
-            std_fitness = []
-
+            mean_fitness, std_fitness = [], []
             total_values = len(param_values)
             for j, val in enumerate(param_values):
                 if progress_callback:
-                    progress_callback(
-                        f"Analyzing TSP sensitivity for '{param_name}' ({i+1}/{total_params}): "
-                        f"value {j+1}/{total_values}"
-                    )
-                current_algo_params = algo_params.copy()
-                current_algo_params[param_name] = val
-                params = {'max_iter': max_iter, **current_algo_params}
+                    progress_callback(f"Analyzing sensitivity for '{param_name}' ({i+1}/{total_params}): value {j+1}/{total_values}")
                 
+                current_algo_params = {**algo_params, actual_param_name: val}
                 fitnesses = []
-                for run in range(5):  # 5 runs per parameter value
-                    tsp_problem = create_tsp_problem(n_cities=n_cities, seed=self.seed + run)
-                    result = algo_func(distance_matrix=tsp_problem['distance_matrix'], seed=self.seed + run, **params)
-                    fitness = result['best_fitness'] if isinstance(result, dict) else result.best_fitness
-                    fitnesses.append(fitness)
+                for run in range(5):
+                    instance = algo_class(seed=self.seed + run, **current_algo_params)
+                    result = instance.optimize(objective_func=problem_func, dim=dim, bounds=bounds, max_iter=max_iter)
+                    fitnesses.append(result.best_fitness)
                 
                 mean_fitness.append(np.mean(fitnesses))
                 std_fitness.append(np.std(fitnesses))
             
-            results[param_name] = {
-                'param_values': param_values,
-                'mean_fitness': mean_fitness,
-                'std_fitness': std_fitness
-            }
+            results[param_name] = {'param_values': param_values, 'mean_fitness': mean_fitness, 'std_fitness': std_fitness}
+        return results
+    
+    def _get_landscape_data(self, algo_class, algo_params, problem_func, bounds,
+                            max_iter, progress_callback=None, pop_size=30, avoid_radius=0.0):
+        if progress_callback: progress_callback("Computing landscape (running algorithm)...")
+        
+        initial_pop_2d = generate_initial_population(2, bounds, pop_size, self.seed, avoid_radius)
+        instance = algo_class(seed=self.seed, **algo_params)
+        result = instance.optimize(objective_func=problem_func, dim=2, bounds=bounds, max_iter=max_iter, initial_population=initial_pop_2d)
+        
+        resolution = 50
+        x = np.linspace(bounds[0], bounds[1], resolution)
+        y = np.linspace(bounds[0], bounds[1], resolution)
+        X, Y = np.meshgrid(x, y)
+        Z = np.array([problem_func([X[i, j], Y[i, j]]) for i in range(resolution) for j in range(resolution)]).reshape(resolution, resolution)
+                
+        return {'best_position': result.best_position, 'best_fitness': result.best_fitness, 'X': X, 'Y': Y, 'Z': Z}
+
+    def _run_tsp_visualization_analysis(self, exp_config: ExperimentConfig,
+                                      sensitivity_params: List[str] = None,
+                                      progress_callback=None) -> Dict:
+        problem_config = exp_config.problem
+        algo_config = exp_config.algorithms[0]
+        
+        algo_class, algo_params = self._get_algorithm(algo_config.name, algo_config.params)
+        tsp_problem = create_tsp_problem(n_cities=problem_config.dim, seed=self.seed)
+
+        if progress_callback: progress_callback("Calculating convergence for TSP...")
+        convergence_data = self._get_tsp_convergence_data(algo_class, algo_params, tsp_problem['distance_matrix'], problem_config.max_iter)
+        
+        performance_data = self._get_tsp_performance_data(algo_class, algo_params, problem_config.dim, problem_config.max_iter, exp_config.n_runs, progress_callback)
+        
+        sensitivity_data = self._get_tsp_sensitivity_data(algo_config.name, algo_class, algo_params, problem_config.dim, problem_config.max_iter, sensitivity_params, progress_callback)
+        
+        return {
+            'convergence': convergence_data, 'performance': performance_data, 'sensitivity': sensitivity_data,
+            'landscape': "Not applicable for TSP.",
+            'metadata': {'algorithm': algo_config.name, 'problem': problem_config.name, 'dim': problem_config.dim, 'n_runs': exp_config.n_runs}
+        }
+
+    def _get_tsp_convergence_data(self, algo_class, algo_params, distance_matrix, max_iter):
+        instance = algo_class(seed=self.seed, **algo_params)
+        result = instance.optimize_tsp(distance_matrix=distance_matrix, max_iter=max_iter)
+        return {'history': result.history}
+
+    def _get_tsp_performance_data(self, algo_class, algo_params, n_cities, max_iter, n_runs, progress_callback=None):
+        all_histories, best_fitnesses = [], []
+        for run in range(n_runs):
+            if progress_callback:
+                progress_callback(f"Assessing TSP performance... (run {run + 1}/{n_runs})")
+            tsp_problem = create_tsp_problem(n_cities=n_cities, seed=self.seed + run)
+            instance = algo_class(seed=self.seed + run, **algo_params)
+            result = instance.optimize_tsp(distance_matrix=tsp_problem['distance_matrix'], max_iter=max_iter)
+            all_histories.append(result.history)
+            best_fitnesses.append(result.best_fitness)
+        return {'all_histories': all_histories, 'best_fitnesses': best_fitnesses}
+
+    def _get_tsp_sensitivity_data(self, algorithm_name, algo_class, algo_params, n_cities, max_iter, sensitivity_params: List[str] = None, progress_callback=None):
+        if not sensitivity_params: return {}
+        results = {}
+        total_params = len(sensitivity_params)
+        for i, param_name in enumerate(sensitivity_params):
+            param_range_info = PARAMETER_RANGES.get(algorithm_name, {}).get(param_name)
+            if not param_range_info: continue
+
+            param_values = None
+            if isinstance(param_range_info, tuple) and len(param_range_info) == 2:
+                param_values = np.linspace(param_range_info[0], param_range_info[1], 5)
+                if param_name == 'population_size':
+                    param_values = np.round(param_values).astype(int)
+            elif isinstance(param_range_info, list):
+                param_values = param_range_info
             
+            if param_values is None: continue
+
+            mean_fitness, std_fitness = [], []
+            total_values = len(param_values)
+            for j, val in enumerate(param_values):
+                if progress_callback:
+                    progress_callback(f"Analyzing TSP sensitivity for '{param_name}' ({i+1}/{total_params}): value {j+1}/{total_values}")
+                
+                current_algo_params = {**algo_params, param_name: val}
+                fitnesses = []
+                for run in range(5):
+                    tsp_problem = create_tsp_problem(n_cities=n_cities, seed=self.seed + run)
+                    instance = algo_class(seed=self.seed + run, **current_algo_params)
+                    result = instance.optimize_tsp(distance_matrix=tsp_problem['distance_matrix'], max_iter=max_iter)
+                    fitnesses.append(result.best_fitness)
+                
+                mean_fitness.append(np.mean(fitnesses))
+                std_fitness.append(np.std(fitnesses))
+            
+            results[param_name] = {'param_values': param_values, 'mean_fitness': mean_fitness, 'std_fitness': std_fitness}
         return results

@@ -1,5 +1,3 @@
-"""config/experiment_config.py - Centralized configuration for experiments"""
-
 from dataclasses import dataclass, field
 from typing import Dict, List, Tuple, Any
 import json
@@ -39,7 +37,7 @@ class ExperimentConfig:
 DEFAULT_PSO_CONFIG = AlgorithmConfig(
     name="PSO",
     params={
-        "n_particles": 30,
+        "population_size": 30,
         "w": 0.7298,
         "c1": 1.49618,
         "c2": 1.49618,
@@ -50,7 +48,7 @@ DEFAULT_PSO_CONFIG = AlgorithmConfig(
 DEFAULT_ACO_CONFIG = AlgorithmConfig(
     name="ACO",
     params={
-        "n_ants": 20,
+        "population_size": 20,
         "alpha": 1.0,
         "beta": 2.0,
         "evaporation_rate": 0.1,
@@ -62,8 +60,8 @@ DEFAULT_ACO_CONFIG = AlgorithmConfig(
 DEFAULT_ABC_CONFIG = AlgorithmConfig(
     name="ABC",
     params={
-        "n_bees": 30,
-        "limit": None,  # Will be set as dim * n_bees
+        "population_size": 30,
+        "limit": None,  # Will be set as dim * population_size
         "modification_rate": 1.0
     }
 )
@@ -71,7 +69,7 @@ DEFAULT_ABC_CONFIG = AlgorithmConfig(
 DEFAULT_FA_CONFIG = AlgorithmConfig(
     name="FA",
     params={
-        "n_fireflies": 25,
+        "population_size": 25,
         "alpha": 0.5,
         "beta0": 1.0,
         "gamma": 1.0
@@ -81,7 +79,7 @@ DEFAULT_FA_CONFIG = AlgorithmConfig(
 DEFAULT_CS_CONFIG = AlgorithmConfig(
     name="CS",
     params={
-        "n_nests": 25,
+        "population_size": 25,
         "pa": 0.25,
         "beta": 1.5,
         "step_size_factor": 0.01
@@ -91,7 +89,7 @@ DEFAULT_CS_CONFIG = AlgorithmConfig(
 DEFAULT_GA_CONFIG = AlgorithmConfig(
     name="GA",
     params={
-        "pop_size": 50,
+        "population_size": 50,
         "crossover_rate": 0.8,
         "mutation_rate": 0.1,
         "tournament_size": 3,
@@ -259,13 +257,13 @@ def get_default_config(experiment_name: str) -> ExperimentConfig:
 
 PARAMETER_RANGES = {
     'PSO': {
-        'n_particles': (20, 50),
+        'population_size': (20, 50),
         'w': (0.4, 0.9),
         'c1': (1.0, 2.5),
         'c2': (1.0, 2.5)
     },
     'ACO': {
-        'n_ants': (10, 50),
+        'population_size': (10, 50),
         'alpha': (0.5, 2.0),
         'beta': (1.0, 5.0),
         'evaporation_rate': (0.01, 0.5),
@@ -273,23 +271,23 @@ PARAMETER_RANGES = {
         'q0': (0.5, 0.99)
     },
     'ABC': {
-        'n_bees': (20, 50),
-        'limit_factor': [0.5, 1.0, 1.5, 2.0]  # Factor to multiply by dim * n_bees
+        'population_size': (20, 50),
+        'limit_factor': [0.5, 1.0, 1.5, 2.0]  # Factor to multiply by dim * population_size
     },
     'FA': {
-        'n_fireflies': (15, 40),
+        'population_size': (15, 40),
         'alpha': (0.2, 1.0),
         'beta0': (0.5, 2.0),
         'gamma': (0.01, 2.0)
     },
     'CS': {
-        'n_nests': (15, 40),
+        'population_size': (15, 40),
         'pa': (0.1, 0.4),
         'beta': (1.0, 2.0),
         'step_size_factor': (0.001, 0.1)
     },
     'GA': {
-        'pop_size': (30, 100),
+        'population_size': (30, 100),
         'crossover_rate': (0.6, 0.95),
         'mutation_rate': (0.01, 0.2),
         'elitism_ratio': (0.05, 0.2)
@@ -306,14 +304,14 @@ PARAMETER_RANGES = {
 
 ALGORITHM_UI_CONFIG = {
     'PSO': {
-        'n_particles': {'label': 'Particle Count', 'default': DEFAULT_PSO_CONFIG.params['n_particles'], 'type': int, 'min': 5, 'max': 100},
+        'population_size': {'label': 'Population Size', 'default': DEFAULT_PSO_CONFIG.params['population_size'], 'type': int, 'min': 5, 'max': 100},
         'w': {'label': 'Inertia Weight', 'default': DEFAULT_PSO_CONFIG.params['w'], 'type': float, 'min': 0.1, 'max': 1.5},
         'c1': {'label': 'Cognitive Coefficient', 'default': DEFAULT_PSO_CONFIG.params['c1'], 'type': float, 'min': 0.0, 'max': 4.0},
         'c2': {'label': 'Social Coefficient', 'default': DEFAULT_PSO_CONFIG.params['c2'], 'type': float, 'min': 0.0, 'max': 4.0},
         'v_max_ratio': {'label': 'Velocity Limit', 'default': DEFAULT_PSO_CONFIG.params['v_max_ratio'], 'type': float, 'min': 0.05, 'max': 1.0},
     },
     'ACO': {
-        'n_ants': {'label': 'Ant Count', 'default': DEFAULT_ACO_CONFIG.params['n_ants'], 'type': int, 'min': 5, 'max': 100},
+        'population_size': {'label': 'Population Size', 'default': DEFAULT_ACO_CONFIG.params['population_size'], 'type': int, 'min': 5, 'max': 100},
         'alpha': {'label': 'Alpha (Pheromone Importance)', 'default': DEFAULT_ACO_CONFIG.params['alpha'], 'type': float, 'min': 0.1, 'max': 5.0},
         'beta': {'label': 'Beta (Heuristic Importance)', 'default': DEFAULT_ACO_CONFIG.params['beta'], 'type': float, 'min': 0.1, 'max': 5.0},
         'evaporation_rate': {'label': 'Evaporation Rate', 'default': DEFAULT_ACO_CONFIG.params['evaporation_rate'], 'type': float, 'min': 0.01, 'max': 1.0},
@@ -321,18 +319,18 @@ ALGORITHM_UI_CONFIG = {
         'q0': {'label': 'Pseudorandom Proportional (q0)', 'default': DEFAULT_ACO_CONFIG.params['q0'], 'type': float, 'min': 0.0, 'max': 1.0},
     },
     'ABC': {
-        'n_bees': {'label': 'Colony Size', 'default': DEFAULT_ABC_CONFIG.params['n_bees'], 'type': int, 'min': 5, 'max': 100},
+        'population_size': {'label': 'Population Size', 'default': DEFAULT_ABC_CONFIG.params['population_size'], 'type': int, 'min': 5, 'max': 100},
         'limit': {'label': 'Scout Limit', 'default': None, 'type': int, 'min': 10, 'max': 1000, 'optional': True},
         'modification_rate': {'label': 'Modification Rate', 'default': DEFAULT_ABC_CONFIG.params['modification_rate'], 'type': float, 'min': 0.1, 'max': 1.0},
     },
     'FA': {
-        'n_fireflies': {'label': 'Population Size', 'default': DEFAULT_FA_CONFIG.params['n_fireflies'], 'type': int, 'min': 5, 'max': 100},
+        'population_size': {'label': 'Population Size', 'default': DEFAULT_FA_CONFIG.params['population_size'], 'type': int, 'min': 5, 'max': 100},
         'alpha': {'label': 'Randomness', 'default': DEFAULT_FA_CONFIG.params['alpha'], 'type': float, 'min': 0.01, 'max': 2.0},
         'beta0': {'label': 'Attractiveness', 'default': DEFAULT_FA_CONFIG.params['beta0'], 'type': float, 'min': 0.1, 'max': 5.0},
         'gamma': {'label': 'Absorption', 'default': DEFAULT_FA_CONFIG.params['gamma'], 'type': float, 'min': 0.01, 'max': 10.0},
     },
     'CS': {
-        'n_nests': {'label': 'Host Nests', 'default': DEFAULT_CS_CONFIG.params['n_nests'], 'type': int, 'min': 5, 'max': 100},
+        'population_size': {'label': 'Population Size', 'default': DEFAULT_CS_CONFIG.params['population_size'], 'type': int, 'min': 5, 'max': 100},
         'pa': {'label': 'Discovery Rate', 'default': DEFAULT_CS_CONFIG.params['pa'], 'type': float, 'min': 0.0, 'max': 1.0},
         'beta': {'label': 'Lévy Parameter', 'default': DEFAULT_CS_CONFIG.params['beta'], 'type': float, 'min': 0.5, 'max': 2.5},
         'step_size_factor': {'label': 'Step Scale', 'default': DEFAULT_CS_CONFIG.params['step_size_factor'], 'type': float, 'min': 0.001, 'max': 0.5},

@@ -1,15 +1,31 @@
-"""algorithms/traditional/simulated_annealing.py - Improved Simulated Annealing
-
-Reference: Kirkpatrick, S., Gelatt, C. D., & Vecchi, M. P. (1983). 
-Optimization by simulated annealing. Science, 220(4598), 671-680.
-"""
-
 import numpy as np
 from typing import Callable, Tuple, Optional
-from ..base import LocalSearchOptimizer, OptimizationResult, run_with_timing
+from ..base import LocalSearchOptimizer, DiscreteOptimizer, OptimizationResult, run_with_timing
 
 
-class SimulatedAnnealing(LocalSearchOptimizer):
+class _BaseSA:
+    """Base class for Simulated Annealing algorithms with shared cooling logic."""
+    def __init__(self, initial_temp: float, final_temp: float, alpha: float,
+                 cooling_schedule: str, patience: int):
+        self.initial_temp = initial_temp
+        self.final_temp = final_temp
+        self.alpha = alpha
+        self.cooling_schedule = cooling_schedule
+        self.patience = patience
+
+    def _cool_down(self, temp: float, iteration: int, max_iter: int) -> float:
+        """Apply chosen cooling schedule."""
+        if self.cooling_schedule == 'exponential':
+            return temp * self.alpha
+        elif self.cooling_schedule == 'linear':
+            return self.initial_temp - (self.initial_temp - self.final_temp) * iteration / max_iter
+        elif self.cooling_schedule == 'logarithmic':
+            return self.initial_temp / (1 + np.log1p(iteration))
+        else:
+            return temp * self.alpha
+
+
+class SimulatedAnnealing(LocalSearchOptimizer, _BaseSA):
     """
     Continuous Simulated Annealing (SA)
     
@@ -29,15 +45,10 @@ class SimulatedAnnealing(LocalSearchOptimizer):
                  inner_loops: int = 50,
                  patience: int = 1500,
                  seed: Optional[int] = None):
-        super().__init__(seed=seed)
-        self.initial_temp = initial_temp
-        self.final_temp = final_temp
-        self.alpha = alpha
-        self.cooling_schedule = cooling_schedule
+        LocalSearchOptimizer.__init__(self, seed=seed)
+        _BaseSA.__init__(self, initial_temp, final_temp, alpha, cooling_schedule, patience)
         self.neighbor_std = neighbor_std
         self.inner_loops = inner_loops
-        self.patience = patience
-        self.name = "SA-Continuous"
 
     @run_with_timing
     def optimize(self,
@@ -141,19 +152,8 @@ class SimulatedAnnealing(LocalSearchOptimizer):
         neighbor = current + perturbation
         return self._clip_bounds(neighbor, lower, upper)
 
-    def _cool_down(self, temp: float, iteration: int, max_iter: int) -> float:
-        """Apply chosen cooling schedule."""
-        if self.cooling_schedule == 'exponential':
-            return temp * self.alpha
-        elif self.cooling_schedule == 'linear':
-            return self.initial_temp - (self.initial_temp - self.final_temp) * iteration / max_iter
-        elif self.cooling_schedule == 'logarithmic':
-            return self.initial_temp / (1 + np.log1p(iteration))
-        else:
-            return temp * self.alpha
 
-
-class SimulatedAnnealingTSP:
+class SimulatedAnnealingTSP(DiscreteOptimizer, _BaseSA):
     """Simulated Annealing for TSP (following Kirkpatrick et al., 1983)"""
     
     def __init__(self, 
@@ -174,15 +174,14 @@ class SimulatedAnnealingTSP:
             patience: Stop early if no improvement after these many iterations.
             seed: Random seed.
         """
-        self.initial_temp = initial_temp
-        self.final_temp = final_temp
-        self.alpha = alpha
+        DiscreteOptimizer.__init__(self, seed=seed)
+        _BaseSA.__init__(self, initial_temp, final_temp, alpha, cooling_schedule, patience)
         self.inner_loops = inner_loops
-        self.cooling_schedule = cooling_schedule
-        self.patience = patience
-        self.rng = np.random.default_rng(seed)
-        self.name = "SA-TSP"
-    
+
+    def optimize(self, objective_func: Callable, dim: int, bounds: Tuple[float, float], max_iter: int, **kwargs) -> OptimizationResult:
+        """This optimizer is for TSP, please use optimize_tsp method."""
+        raise NotImplementedError("This optimizer is for TSP, please use optimize_tsp method.")
+
     @run_with_timing
     def optimize_tsp(self, distance_matrix: np.ndarray,
                     max_iter: int = 20000) -> OptimizationResult:
@@ -283,114 +282,3 @@ class SimulatedAnnealingTSP:
         # Reverse the segment
         new_route[i:j] = list(reversed(new_route[i:j]))
         return new_route
-
-    def _cool_down(self, temp: float, iteration: int, max_iter: int) -> float:
-        """Apply chosen cooling schedule"""
-        if self.cooling_schedule == "exponential":
-            return temp * self.alpha
-        elif self.cooling_schedule == "linear":
-            return self.initial_temp - (self.initial_temp - self.final_temp) * (iteration / max_iter)
-        elif self.cooling_schedule == "logarithmic":
-            return self.initial_temp / (1 + np.log1p(iteration))
-        else:
-            return temp * self.alpha
-
-
-# Convenience functions
-def run_simulated_annealing(
-    objective_func: Callable,
-    dim: int,
-    bounds: Tuple[float, float],
-    max_iter: int = 2500,
-    initial_temp: float = 1000,
-    final_temp: float = 1e-3,
-    alpha: float = 0.98,
-    cooling_schedule: str = 'exponential',
-    neighbor_std: float = 0.3,
-    inner_loops: int = 50,
-    patience: int = 1500,
-    minimize: bool = True,
-    seed: Optional[int] = None,
-    **kwargs
-) -> dict:
-    """
-    Run Simulated Annealing (SA) for continuous optimization problems.
-    Supports temperature-dependent perturbations and flexible cooling schedules.
-
-    Args:
-        objective_func : Objective function to optimize (min or max).
-        dim            : Problem dimensionality.
-        bounds         : (lower, upper) bounds for each dimension.
-        max_iter       : Maximum number of total iterations.
-        initial_temp   : Starting temperature.
-        final_temp     : Final temperature (stop criterion).
-        alpha          : Cooling rate for exponential schedule.
-        cooling_schedule : 'exponential', 'linear', or 'logarithmic'.
-        neighbor_std   : Base step size (scaled by temperature).
-        inner_loops    : Number of neighbor evaluations per temperature.
-        patience       : Early stopping threshold (no improvement limit).
-        minimize       : True for minimization, False for maximization.
-        seed           : Random seed.
-
-    Returns:
-        dict: Dictionary containing best solution, best fitness, history, etc.
-    """
-    sa = SimulatedAnnealing(
-        initial_temp=initial_temp,
-        final_temp=final_temp,
-        alpha=alpha,
-        cooling_schedule=cooling_schedule,
-        neighbor_std=neighbor_std,
-        inner_loops=inner_loops,
-        patience=patience,
-        seed=seed
-    )
-    result = sa.optimize(
-        objective_func,
-        dim,
-        bounds,
-        max_iter=max_iter,
-        minimize=minimize
-    )
-    return result.to_dict()
-
-
-def run_simulated_annealing_tsp(
-    distance_matrix: np.ndarray,
-    max_iter: int = 20000,
-    initial_temp: float = 1000,
-    final_temp: float = 1e-3,
-    alpha: float = 0.995,
-    inner_loops: Optional[int] = None,
-    cooling_schedule: str = "exponential",
-    patience: int = 2000,
-    seed: Optional[int] = None
-) -> dict:
-    """
-    Run Simulated Annealing (SA) for the Traveling Salesman Problem (TSP).
-    
-    Args:
-        distance_matrix : 2D numpy array of distances between cities
-        max_iter         : Maximum total number of move attempts
-        initial_temp     : Starting temperature
-        final_temp       : Final (minimum) temperature
-        alpha            : Cooling factor for exponential schedule
-        inner_loops      : Number of moves per temperature step (default = 10 * n_cities)
-        cooling_schedule : 'exponential', 'linear', or 'logarithmic'
-        patience         : Stop early if no improvement for this many iterations
-        seed             : Random seed
-
-    Returns:
-        dict: Dictionary with best route, distance, and history.
-    """
-    sa_tsp = SimulatedAnnealingTSP(
-        initial_temp=initial_temp,
-        final_temp=final_temp,
-        alpha=alpha,
-        inner_loops=inner_loops,
-        cooling_schedule=cooling_schedule,
-        patience=patience,
-        seed=seed
-    )
-    result = sa_tsp.optimize_tsp(distance_matrix, max_iter)
-    return result.to_dict()

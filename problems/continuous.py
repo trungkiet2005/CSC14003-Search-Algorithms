@@ -1,20 +1,6 @@
-"""problems/continuous.py - Continuous optimization benchmark problems"""
-
 import numpy as np
 from typing import Callable, Tuple, Dict, Any
 from dataclasses import dataclass
-
-
-@dataclass
-class ProblemSpec:
-    """Specification for an optimization problem"""
-    name: str
-    function: Callable
-    bounds: Tuple[float, float]
-    optimum: float
-    optimum_position: np.ndarray
-    dimension: int
-    description: str
 
 
 class ContinuousProblem:
@@ -183,24 +169,3 @@ def get_problem(name: str, dim: int = 10) -> Tuple[Callable, Dict[str, Any]]:
     }
     
     return problem, info
-
-
-# Legacy functions for backward compatibility
-def sphere(x):
-    """Sphere function"""
-    return Sphere(len(x)).evaluate(x)
-
-
-def rastrigin(x):
-    """Rastrigin function"""
-    return Rastrigin(len(x)).evaluate(x)
-
-
-def rosenbrock(x):
-    """Rosenbrock function"""
-    return Rosenbrock(len(x)).evaluate(x)
-
-
-def ackley(x):
-    """Ackley function"""
-    return Ackley(len(x)).evaluate(x)

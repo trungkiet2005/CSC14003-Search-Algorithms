@@ -1,29 +1,23 @@
-"""algorithms/swarm/aco.py - Improved Ant Colony Optimization for TSP
-
-Reference: Dorigo, M., & Stützle, T. (2006). Ant Colony Optimization.
-"""
-
 import numpy as np
-from typing import Optional
-from ..base import DiscreteOptimizer, OptimizationResult, run_with_timing
+from typing import Optional, Callable, Tuple
+from ..base import DiscretePopulationBasedOptimizer, OptimizationResult, run_with_timing
 
-class ACO(DiscreteOptimizer):
+class ACO(DiscretePopulationBasedOptimizer):
     """Ant Colony System (ACS) bases on ACO metaheuristic for TSP — Dorigo & Gambardella 1996"""
 
-    def __init__(self, n_ants: int = 20, alpha: float = 1.0, beta: float = 2.0,
+    def __init__(self, population_size: int = 20, alpha: float = 1.0, beta: float = 2.0,
                  evaporation_rate: float = 0.1, phi: float = 0.1, q0: float = 0.9,
                  seed: Optional[int] = None):
-        super().__init__(seed)
-        self.n_ants = n_ants
+        super().__init__(population_size=population_size, seed=seed)
         self.alpha = alpha
         self.beta = beta
-        self.evaporation_rate = evaporation_rate              # evaporation for offline update
-        self.phi = phi              # local update rate
-        self.q0 = q0                # pseudorandom proportional parameter
-        self.name = "ACO"
+        self.evaporation_rate = evaporation_rate                # evaporation for offline update
+        self.phi = phi                                          # local update rate
+        self.q0 = q0                                            # pseudorandom proportional parameter
 
-    def optimize(self, objective_func: callable, dim: int, bounds: tuple, max_iter: int, **kwargs) -> OptimizationResult:
-        pass
+    def optimize(self, objective_func: Callable, dim: int, bounds: Tuple[float, float], max_iter: int, **kwargs) -> OptimizationResult:
+        """This optimizer is for TSP, please use optimize_tsp method."""
+        raise NotImplementedError("This optimizer is for TSP, please use optimize_tsp method.")
 
     @run_with_timing
     def optimize_tsp(self, distance_matrix: np.ndarray,
@@ -46,7 +40,7 @@ class ACO(DiscreteOptimizer):
             all_routes = []
             all_distances = []
 
-            for ant in range(self.n_ants):
+            for ant in range(self.population_size):
                 route = self._construct_route(pheromone, heuristic, tau0)
                 distance = self._calculate_route_distance(route, distance_matrix)
 
@@ -61,10 +55,11 @@ class ACO(DiscreteOptimizer):
 
             # Offline pheromone update (only best ant)
             pheromone *= (1 - self.evaporation_rate)
-            for i in range(len(best_route)):
-                a, b = best_route[i], best_route[(i + 1) % len(best_route)]
-                pheromone[a, b] += self.evaporation_rate * (1.0 / best_distance)
-                pheromone[b, a] = pheromone[a, b]
+            if best_route is not None:
+                for i in range(len(best_route)):
+                    a, b = best_route[i], best_route[(i + 1) % len(best_route)]
+                    pheromone[a, b] += self.evaporation_rate * (1.0 / best_distance)
+                    pheromone[b, a] = pheromone[a, b]
 
         return OptimizationResult(
             best_position=best_route,
@@ -120,23 +115,3 @@ class ACO(DiscreteOptimizer):
             a, b = route[i], route[(i + 1) % len(route)]
             distance += distance_matrix[a, b]
         return distance
-
-
-def run_aco(distance_matrix: np.ndarray, 
-            n_ants: int = 20, 
-            max_iter: int = 100,
-            alpha: float = 1.0, 
-            beta: float = 2.0, 
-            evaporation_rate: float = 0.1, 
-            phi: float = 0.1, 
-            q0: float = 0.9,
-            seed: Optional[int] = None) -> dict:
-    """
-    Run Ant Colony System (ACS) for TSP — backward-compatible name.
-    """
-    acs = ACO(
-        n_ants=n_ants, alpha=alpha, beta=beta,
-        evaporation_rate=evaporation_rate, phi=phi, q0=q0, seed=seed
-    )
-    result = acs.optimize_tsp(distance_matrix, max_iter)
-    return result.to_dict()

@@ -1,9 +1,3 @@
-"""algorithms/swarm/cs.py - Improved Cuckoo Search Algorithm
-
-Reference: Yang, X. S., & Deb, S. (2009). Cuckoo search via Lévy flights.
-In 2009 World congress on nature & biologically inspired computing (pp. 210-214).
-"""
-
 import numpy as np
 from typing import Callable, Tuple, Optional
 from ..base import PopulationBasedOptimizer, OptimizationResult, run_with_timing
@@ -21,21 +15,18 @@ class CS(PopulationBasedOptimizer):
     3. Host bird can discover alien egg with probability pa
     
     Attributes:
-        n_nests: Number of nests (solutions)
         pa: Discovery probability (fraction of worst nests abandoned)
         beta: Lévy distribution parameter (typically 1.5)
         step_size_factor: Step size scaling factor
     """
     
-    def __init__(self, n_nests: int = 25, pa: float = 0.25,
+    def __init__(self, population_size: int = 25, pa: float = 0.25,
                  beta: float = 1.5, step_size_factor: float = 0.01,
                  seed: Optional[int] = None):
-        super().__init__(population_size=n_nests, seed=seed)
-        self.n_nests = n_nests
+        super().__init__(population_size=population_size, seed=seed)
         self.pa = pa
         self.beta = beta
         self.step_size_factor = step_size_factor
-        self.name = "CS"
     
     @run_with_timing
     def optimize(self, objective_func: Callable, 
@@ -61,8 +52,8 @@ class CS(PopulationBasedOptimizer):
         
         # Initialize nests
         if initial_population is not None:
-            if len(initial_population) != self.n_nests:
-                raise ValueError(f"Initial population size {len(initial_population)} does not match n_nests {self.n_nests}")
+            if len(initial_population) != self.population_size:
+                raise ValueError(f"Initial population size {len(initial_population)} does not match population_size {self.population_size}")
             nests = initial_population.copy()
         else:
             nests = self._initialize_population(dim, lower, upper)
@@ -86,7 +77,7 @@ class CS(PopulationBasedOptimizer):
         for iteration in range(max_iter):
             # ==================== LÉVY FLIGHTS ====================
             # Generate new solutions via Lévy flights
-            for i in range(self.n_nests):
+            for i in range(self.population_size):
                 # Generate Lévy flight step
                 step = self._levy_flight(dim)
                 
@@ -107,7 +98,7 @@ class CS(PopulationBasedOptimizer):
                 new_fitness = objective_func(new_nest)
                 
                 # Random walk: compare with random nest
-                j = self.rng.integers(0, self.n_nests)
+                j = self.rng.integers(0, self.population_size)
                 
                 # Replace if better
                 if (minimize and new_fitness < fitness[j]) or \
@@ -117,7 +108,7 @@ class CS(PopulationBasedOptimizer):
             
             # ==================== ABANDON WORST NESTS ====================
             # Abandon a fraction pa of worst nests
-            n_abandon = max(1, int(self.pa * self.n_nests))
+            n_abandon = max(1, int(self.pa * self.population_size))
             
             if minimize:
                 worst_indices = np.argsort(fitness)[-n_abandon:]
@@ -130,7 +121,7 @@ class CS(PopulationBasedOptimizer):
                 if self.rng.random() < self.pa:
                     # Generate new solution using random walk
                     # Select two random nests
-                    k1, k2 = self.rng.choice(self.n_nests, 2, replace=False)
+                    k1, k2 = self.rng.choice(self.population_size, 2, replace=False)
                     
                     # Random walk
                     step_size = self.rng.random() * (nests[k1] - nests[k2])
@@ -195,20 +186,3 @@ class CS(PopulationBasedOptimizer):
         step = u / (np.abs(v) ** (1 / beta))
         
         return step
-
-
-def run_cs(objective_func: Callable, dim: int, bounds: Tuple[float, float],
-          n_nests: int = 25, max_iter: int = 100, pa: float = 0.25,
-          beta: float = 1.5, step_size_factor: float = 0.01,
-          minimize: bool = True, seed: Optional[int] = None,
-          initial_population: Optional[np.ndarray] = None) -> dict:
-    """
-    Convenience function to run Cuckoo Search
-    
-    Returns dictionary for backward compatibility
-    """
-    cs = CS(n_nests=n_nests, pa=pa, beta=beta, 
-            step_size_factor=step_size_factor, seed=seed)
-    result = cs.optimize(objective_func, dim, bounds, max_iter, minimize,
-                         initial_population=initial_population)
-    return result.to_dict()

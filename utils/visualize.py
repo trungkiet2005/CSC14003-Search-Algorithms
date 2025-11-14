@@ -1,5 +1,3 @@
-"""utils/visualize.py - Enhanced visualization utilities"""
-
 from __future__ import annotations
 import numpy as np
 from typing import TYPE_CHECKING
@@ -9,8 +7,6 @@ if TYPE_CHECKING:
 import matplotlib.pyplot as plt
 import matplotlib
 matplotlib.use('Agg') 
-from matplotlib import cm
-from mpl_toolkits.mplot3d import Axes3D
 import seaborn as sns
 from pathlib import Path
 from typing import Dict, List, Optional, Callable, Tuple

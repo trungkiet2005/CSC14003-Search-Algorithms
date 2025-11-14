@@ -1,4 +1,3 @@
-# File 2: visualization_tab.py - PyQt6 version
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, 
                               QComboBox, QLineEdit, QScrollArea, QFrame, QGridLayout,
                               QTextEdit, QFileDialog, QCheckBox)

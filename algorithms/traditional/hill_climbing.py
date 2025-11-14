@@ -1,8 +1,3 @@
-"""algorithms/traditional/hill_climbing.py - Improved Hill Climbing Algorithm
-
-Reference: Russell, S., & Norvig, P. (2010). Artificial Intelligence: A Modern Approach.
-"""
-
 import numpy as np
 from typing import Callable, Tuple, Optional
 from ..base import LocalSearchOptimizer, OptimizationResult, run_with_timing
@@ -27,7 +22,6 @@ class HillClimbing(LocalSearchOptimizer):
         self.initial_step_size = step_size
         self.adaptive_step = adaptive_step
         self.random_restart = random_restart
-        self.name = "HC"
     
     @run_with_timing
     def optimize(self, objective_func: Callable, 
@@ -140,118 +134,3 @@ class HillClimbing(LocalSearchOptimizer):
             convergence_iter=convergence_iter,
             n_restarts=self.random_restart
         )
-
-
-class StochasticHillClimbing(LocalSearchOptimizer):
-    """Stochastic Hill Climbing
-    
-    Variant that randomly selects among improving neighbors
-    rather than always choosing the best.
-    """
-    
-    def __init__(self, step_size: float = 0.1,
-                 n_neighbors: int = 20,
-                 seed: Optional[int] = None):
-        super().__init__(seed=seed)
-        self.step_size = step_size
-        self.n_neighbors = n_neighbors
-        self.name = "Stochastic-HC"
-    
-    @run_with_timing
-    def optimize(self, objective_func: Callable, 
-                dim: int, bounds: Tuple[float, float],
-                max_iter: int = 100, minimize: bool = True,
-                **kwargs) -> OptimizationResult:
-        """Run Stochastic Hill Climbing"""
-        lower, upper = bounds
-        scale = upper - lower
-        
-        # Initialize
-        current_position = self._random_position(dim, lower, upper)
-        current_fitness = objective_func(current_position)
-        
-        best_position = current_position.copy()
-        best_fitness = current_fitness
-        history = [best_fitness]
-        
-        step_size = self.step_size * scale
-        
-        for iteration in range(max_iter):
-            # Generate random neighbors
-            improved = False
-            
-            for _ in range(self.n_neighbors):
-                # Random perturbation
-                neighbor = current_position + self.rng.normal(0, step_size, dim)
-                neighbor = self._clip_bounds(neighbor, lower, upper)
-                
-                # Evaluate
-                neighbor_fitness = objective_func(neighbor)
-                
-                # Accept if better
-                if (minimize and neighbor_fitness < current_fitness) or \
-                   (not minimize and neighbor_fitness > current_fitness):
-                    current_position = neighbor
-                    current_fitness = neighbor_fitness
-                    improved = True
-                    break  # Accept first improvement (first-choice)
-            
-            # Update best
-            if (minimize and current_fitness < best_fitness) or \
-               (not minimize and current_fitness > best_fitness):
-                best_position = current_position.copy()
-                best_fitness = current_fitness
-            
-            history.append(best_fitness)
-            
-            # Reduce step size if no improvement
-            if not improved:
-                step_size *= 0.95
-        
-        return OptimizationResult(
-            best_position=best_position,
-            best_fitness=best_fitness,
-            history=history
-        )
-
-
-# Convenience functions
-def run_hill_climbing(objective_func: Callable, dim: int, 
-                     bounds: Tuple[float, float],
-                     max_iter: int = 100, step_size: float = 0.1,
-                     adaptive_step: bool = True,
-                     random_restart: int = 5,
-                     minimize: bool = True, 
-                     seed: Optional[int] = None,
-                     **kwargs) -> dict:
-    """
-    Convenience function to run Hill Climbing
-    
-    Returns dictionary for backward compatibility
-    """
-    hc = HillClimbing(
-        step_size=step_size,
-        adaptive_step=adaptive_step,
-        random_restart=random_restart,
-        seed=seed
-    )
-    result = hc.optimize(objective_func, dim, bounds, max_iter, minimize)
-    return result.to_dict()
-
-
-def run_stochastic_hill_climbing(objective_func: Callable, dim: int,
-                                 bounds: Tuple[float, float],
-                                 max_iter: int = 100,
-                                 step_size: float = 0.1,
-                                 n_neighbors: int = 20,
-                                 minimize: bool = True,
-                                 seed: Optional[int] = None,
-                                 **kwargs) -> dict:
-    """Run Stochastic Hill Climbing"""
-    shc = StochasticHillClimbing(
-        step_size=step_size,
-        n_neighbors=n_neighbors,
-        seed=seed
-    )
-    result = shc.optimize(objective_func, dim, bounds, max_iter, minimize)
-    return result.to_dict()

@@ -1,9 +1,3 @@
-"""algorithms/swarm/abc.py - Improved Artificial Bee Colony Algorithm
-
-Reference: Karaboga, D., & Basturk, B. (2007). A powerful and efficient 
-algorithm for numerical function optimization: artificial bee colony (ABC) algorithm.
-"""
-
 import numpy as np
 from typing import Callable, Tuple, Optional
 from ..base import PopulationBasedOptimizer, OptimizationResult, run_with_timing
@@ -18,19 +12,16 @@ class ABC(PopulationBasedOptimizer):
     3. Scout bee phase: Exhausted food sources are abandoned and replaced
     
     Attributes:
-        n_bees: Number of employed bees (total population = 2 * n_bees)
         limit: Abandonment limit for scout bees
         modification_rate: Rate of dimension modification
     """
     
-    def __init__(self, n_bees: int = 30, limit: int = None,
+    def __init__(self, population_size: int = 30, limit: int = None,
                  modification_rate: float = 1.0,
                  seed: Optional[int] = None):
-        super().__init__(population_size=n_bees, seed=seed)
-        self.n_bees = n_bees
+        super().__init__(population_size=population_size, seed=seed)
         self.limit = limit  # Will be set based on problem if None
         self.modification_rate = modification_rate
-        self.name = "ABC"
     
     @run_with_timing
     def optimize(self, objective_func: Callable, 
@@ -54,16 +45,16 @@ class ABC(PopulationBasedOptimizer):
         """
         lower, upper = bounds
         
-        # Set limit if not provided (common: limit = dim * n_bees)
+        # Set limit if not provided (common: limit = dim * population_size)
         if self.limit is None:
-            limit = dim * self.n_bees
+            limit = dim * self.population_size
         else:
             limit = self.limit
         
         # Initialize food sources (solutions)
         if initial_population is not None:
-            if len(initial_population) != self.n_bees:
-                raise ValueError(f"Initial population size {len(initial_population)} does not match n_bees {self.n_bees}")
+            if len(initial_population) != self.population_size:
+                raise ValueError(f"Initial population size {len(initial_population)} does not match population_size {self.population_size}")
             food_sources = initial_population.copy()
         else:
             food_sources = self._initialize_population(dim, lower, upper)
@@ -77,7 +68,7 @@ class ABC(PopulationBasedOptimizer):
             fitness_values = fitness.copy()
         
         # Track number of trials for each food source
-        trials = np.zeros(self.n_bees, dtype=int)
+        trials = np.zeros(self.population_size, dtype=int)
         
         # Initialize best solution
         if minimize:
@@ -92,7 +83,7 @@ class ABC(PopulationBasedOptimizer):
         
         for iteration in range(max_iter):
             # ==================== EMPLOYED BEE PHASE ====================
-            for i in range(self.n_bees):
+            for i in range(self.population_size):
                 # Generate new candidate solution
                 new_solution = self._generate_neighbor(
                     food_sources, i, dim, lower, upper
@@ -122,10 +113,10 @@ class ABC(PopulationBasedOptimizer):
             # Onlooker bees select food sources based on probability
             onlooker_count = 0
             t = 0
-            while onlooker_count < self.n_bees and t < self.n_bees * 10:
+            while onlooker_count < self.population_size and t < self.population_size * 10:
                 # Roulette wheel selection
-                if self.rng.random() < probabilities[t % self.n_bees]:
-                    selected = t % self.n_bees
+                if self.rng.random() < probabilities[t % self.population_size]:
+                    selected = t % self.population_size
                     
                     # Generate new candidate solution
                     new_solution = self._generate_neighbor(
@@ -199,9 +190,9 @@ class ABC(PopulationBasedOptimizer):
                           dim: int, lower: float, upper: float) -> np.ndarray:
         """Generate neighbor solution for employed/onlooker bee"""
         # Select random neighbor (different from i)
-        k = self.rng.integers(0, self.n_bees)
+        k = self.rng.integers(0, self.population_size)
         while k == i:
-            k = self.rng.integers(0, self.n_bees)
+            k = self.rng.integers(0, self.population_size)
         
         # Select random dimension(s) to modify
         num_dims_to_modify = max(1, int(self.modification_rate * dim))
@@ -236,19 +227,3 @@ class ABC(PopulationBasedOptimizer):
         probabilities = fitness_values / total_fitness
         
         return probabilities
-
-
-def run_abc(objective_func: Callable, dim: int, bounds: Tuple[float, float],
-           n_bees: int = 30, max_iter: int = 100, limit: int = None,
-           modification_rate: float = 1.0,
-           minimize: bool = True, seed: Optional[int] = None,
-           initial_population: Optional[np.ndarray] = None) -> dict:
-    """
-    Convenience function to run ABC
-    
-    Returns dictionary for backward compatibility
-    """
-    abc = ABC(n_bees=n_bees, limit=limit, modification_rate=modification_rate, seed=seed)
-    result = abc.optimize(objective_func, dim, bounds, max_iter, minimize,
-                          initial_population=initial_population)
-    return result.to_dict()
